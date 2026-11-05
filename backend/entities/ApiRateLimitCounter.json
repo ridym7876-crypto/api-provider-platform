@@ -1,0 +1,40 @@
+{
+  "type": "object",
+  "properties": {
+    "scope_key": {
+      "type": "string"
+    },
+    "api_key_id": {
+      "type": "string"
+    },
+    "window_type": {
+      "type": "string",
+      "enum": [
+        "minute",
+        "day"
+      ]
+    },
+    "window_start": {
+      "type": "string"
+    },
+    "count": {
+      "type": "number"
+    },
+    "minute_start": {
+      "type": "string"
+    },
+    "minute_count": {
+      "type": "number"
+    },
+    "day_start": {
+      "type": "string"
+    },
+    "day_count": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "scope_key"
+  ],
+  "name": "ApiRateLimitCounter"
+}

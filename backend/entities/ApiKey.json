@@ -1,0 +1,71 @@
+{
+  "type": "object",
+  "properties": {
+    "developer_id": {
+      "type": "string"
+    },
+    "developer_email": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "prefix": {
+      "type": "string"
+    },
+    "key_hash": {
+      "type": "string"
+    },
+    "last4": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "revoked"
+      ]
+    },
+    "scopes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "api_slugs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "rate_limit_per_minute": {
+      "type": "number"
+    },
+    "daily_quota": {
+      "type": "number"
+    },
+    "request_count": {
+      "type": "number"
+    },
+    "success_count": {
+      "type": "number"
+    },
+    "error_count": {
+      "type": "number"
+    },
+    "last_used_at": {
+      "type": "string"
+    },
+    "expires_at": {
+      "type": "string"
+    },
+    "revoked_at": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "developer_id",
+    "key_hash"
+  ],
+  "name": "ApiKey"
+}

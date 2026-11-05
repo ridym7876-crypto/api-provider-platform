@@ -1,0 +1,61 @@
+{
+  "type": "object",
+  "properties": {
+    "email": {
+      "type": "string"
+    },
+    "full_name": {
+      "type": "string"
+    },
+    "company": {
+      "type": "string"
+    },
+    "website": {
+      "type": "string"
+    },
+    "plan": {
+      "type": "string",
+      "enum": [
+        "free",
+        "pro",
+        "enterprise"
+      ]
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "developer",
+        "admin"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "suspended"
+      ]
+    },
+    "password_hash": {
+      "type": "string"
+    },
+    "rate_limit_per_minute": {
+      "type": "number"
+    },
+    "daily_quota": {
+      "type": "number"
+    },
+    "linked_user_id": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "last_login_at": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "email"
+  ],
+  "name": "DeveloperProfile"
+}

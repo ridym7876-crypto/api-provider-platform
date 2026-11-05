@@ -1,0 +1,31 @@
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "slug": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "icon": {
+      "type": "string"
+    },
+    "color": {
+      "type": "string"
+    },
+    "sort_order": {
+      "type": "number"
+    },
+    "is_active": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "name",
+    "slug"
+  ],
+  "name": "ApiCategory"
+}

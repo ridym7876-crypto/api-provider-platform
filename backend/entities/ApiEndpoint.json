@@ -1,0 +1,81 @@
+{
+  "type": "object",
+  "properties": {
+    "api_id": {
+      "type": "string"
+    },
+    "api_slug": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "slug": {
+      "type": "string"
+    },
+    "method": {
+      "type": "string",
+      "enum": [
+        "GET",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE"
+      ]
+    },
+    "path": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "parameters": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "request_headers": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "request_body_schema": {
+      "type": "object"
+    },
+    "request_body_example": {
+      "type": "object"
+    },
+    "response_examples": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "auth_required": {
+      "type": "boolean"
+    },
+    "handler_key": {
+      "type": "string"
+    },
+    "rate_limit_override": {
+      "type": "number"
+    },
+    "is_active": {
+      "type": "boolean"
+    },
+    "sort_order": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "api_slug",
+    "method",
+    "path"
+  ],
+  "name": "ApiEndpoint"
+}

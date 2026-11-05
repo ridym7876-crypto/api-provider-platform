@@ -1,0 +1,66 @@
+{
+  "type": "object",
+  "properties": {
+    "developer_id": {
+      "type": "string"
+    },
+    "developer_email": {
+      "type": "string"
+    },
+    "api_key_id": {
+      "type": "string"
+    },
+    "api_key_prefix": {
+      "type": "string"
+    },
+    "api_id": {
+      "type": "string"
+    },
+    "api_slug": {
+      "type": "string"
+    },
+    "endpoint_id": {
+      "type": "string"
+    },
+    "endpoint_path": {
+      "type": "string"
+    },
+    "method": {
+      "type": "string"
+    },
+    "status_code": {
+      "type": "number"
+    },
+    "response_time_ms": {
+      "type": "number"
+    },
+    "success": {
+      "type": "boolean"
+    },
+    "error_code": {
+      "type": "string"
+    },
+    "ip_address": {
+      "type": "string"
+    },
+    "user_agent": {
+      "type": "string"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "api",
+        "playground",
+        "key_test"
+      ]
+    }
+  },
+  "required": [
+    "status_code",
+    "method"
+  ],
+  "name": "ApiRequestLog"
+}

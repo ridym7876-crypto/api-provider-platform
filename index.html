@@ -201,8 +201,8 @@ function renderNav(){
     ? `<span class="pill muted">${esc(state.dev.email)}</span>
        <span class="pill ${state.dev.role==="admin"?"warn":"ok"}">${esc(state.dev.role)}</span>
        <button class="btn ghost sm" onclick="logout()">Sign out</button>`
-    : `<button class="btn sm" onclick="go('auth')">Sign in</button>`;
-  $("hostline").innerHTML = state.dev ? "" : " · <a href='#' onclick='go(\"auth\");return false'>Create a free developer account</a>";
+    : `<button class="btn sm" onclick="openAuth('login')">Sign in</button>`;
+  $("hostline").innerHTML = state.dev ? "" : " · <a href='#' onclick='openAuth(\"register\");return false'>Create a free developer account</a>";
 }
 
 function go(view){
@@ -214,10 +214,15 @@ function go(view){
      usage: viewUsage, history: viewHistory, admin: viewAdmin, playground: viewPlayground }[view] || viewCatalog)();
 }
 
+function openAuth(tab){
+  state.authTab = tab || "login";
+  go("auth");
+}
+
 async function logout(){
   try{ await call("devSession", { action: "logout" }); }catch(e){}
   state.token = ""; localStorage.removeItem(TOKEN_KEY); state.dev = null;
-  toast("Signed out", "ok"); go("catalog");
+  state.authTab = "login"; toast("Signed out", "ok"); go("catalog");
 }
 
 /* ------------------------------------------------------------------ catalog */
@@ -327,8 +332,8 @@ function viewAuth(){
     <div class="auth-wrap">
       <div class="card">
         <div class="tabs">
-          <button class="${state.authTab!=="register"?"active":""}" onclick="state.authTab='login';go('auth')">Sign in</button>
-          <button class="${state.authTab==="register"?"active":""}" onclick="state.authTab='register';go('auth')">Create account</button>
+          <button class="${state.authTab!=="register"?"active":""}" onclick="openAuth('login')">Sign in</button>
+          <button class="${state.authTab==="register"?"active":""}" onclick="openAuth('register')">Create account</button>
         </div>
         <div id="authForm"></div>
       </div>
@@ -361,6 +366,7 @@ async function submitAuth(){
     });
     state.token = d.token; localStorage.setItem(TOKEN_KEY, d.token);
     state.dev = d.developer;
+    state.authTab = "login";
     toast(reg ? "Account created" : "Signed in", "ok");
     go("dashboard");
   }catch(e){

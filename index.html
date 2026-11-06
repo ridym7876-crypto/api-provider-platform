@@ -627,7 +627,11 @@ async function sendPlayground() {
     render();
     await loadDashboard();
   } else {
-    state.pgResult = { status: status, ms: ms, body: JSON.stringify(body.error || body, null, 2) };
+    const code = (body.error && body.error.code) || "";
+    const msg = code === "platform_capacity"
+      ? "The platform is momentarily at its request ceiling. Wait a few seconds and press Send again."
+      : ((body.error && body.error.message) || "Request failed");
+    state.pgResult = { status: status, ms: ms, body: JSON.stringify({ error: code || "error", message: msg }, null, 2) };
     render();
   }
 }

@@ -1,568 +1,593 @@
 // @ts-nocheck
-// apiGateway — THE PUBLIC DATA PLANE.
-//
-// External developers call this one URL with their secret API key:
-//   POST https://<host>/functions/apiGateway
-//   X-Api-Key: sk_live_xxxxxxxx
-//   { "api": "system", "endpoint": "time", "params": {...}, "body": {...} }
-// or route by path:
-//   GET  https://<host>/functions/apiGateway?path=/v1/system/time
-//
-// PERFORMANCE NOTE: the Base44 runtime caps entity operations at ~70 per 60s per caller,
-// so this gateway is cache-first. Keys (5s TTL), sessions (10s TTL) and the API/endpoint
-// catalog (30s TTL) are memoised per isolate, and rate-limit windows are counted in memory.
-// That leaves exactly ONE entity write per request: the audit log row.
-// Trade-off: key revocation propagates within ~5s, catalog edits within ~30s, and rate-limit
-// counters are per isolate (documented in the report as a Phase 2 durability item).
+// apiGateway — public data plane. Cache-first; keys verified by SHA-256; durable quotas; AI handlers.
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.54';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Api-Key, X-Developer-Token, X-Playground-Key, X-Client-Source',
-  'Access-Control-Expose-Headers': 'X-Request-Id, X-RateLimit-Limit, X-RateLimit-Remaining, Retry-After',
   'Access-Control-Max-Age': '600',
 };
-const MAX_BODY_BYTES = 100 * 1024;
+
+const KEY_PREFIXES = ['mr_riduy_ai_', 'sk_live_'];
+
+function json(status: number, body: unknown, extra: Record<string, string> = {}) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json', ...CORS, ...extra },
+  });
+}
+
+async function sha256hex(s: string) {
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(d)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function rid() {
+  const b = new Uint8Array(8);
+  crypto.getRandomValues(b);
+  return 'req_' + Array.from(b).map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+
+const cache: any = { catalog: null, catalogAt: 0, keys: new Map(), sessions: new Map(), devs: new Map(), rl: new Map() };
 const KEY_TTL = 5000;
-const SESSION_TTL = 10000;
-const CATALOG_TTL = 30000;
+const CAT_TTL = 30000;
+const SESS_TTL = 10000;
+const DEV_TTL = 30000;
 
-const toHex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
-async function sha256hex(value) {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
-  return toHex(new Uint8Array(digest));
-}
-const slugify = (value) => String(value || '').toLowerCase().trim()
-  .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-
-// ---------------------------------------------------------------- isolate caches
-const keyCache = new Map();      // key_hash -> { at, record }
-const keyByIdCache = new Map();  // key id  -> { at, record }
-const devCache = new Map();      // developer id -> { at, record }
-const sessionCache = new Map();  // token_hash -> { at, record }
-const rateState = new Map();     // key id -> { minuteStart, minuteCount, dayStart, dayCount }
-let catalogCache = { at: 0, apis: [], endpoints: [] };
-
-function cacheGet(map, key, ttl) {
-  const hit = map.get(key);
-  if (hit && Date.now() - hit.at < ttl) return hit.record;
-  return null;
-}
-function cacheSet(map, key, record) {
-  if (map.size > 800) map.clear();
-  map.set(key, { at: Date.now(), record });
-}
-
-async function loadCatalog(base44, force) {
-  if (!force && Date.now() - catalogCache.at < CATALOG_TTL) return catalogCache;
-  const apis = await base44.asServiceRole.entities.ApiService.list({ limit: 500 });
-  const endpoints = await base44.asServiceRole.entities.ApiEndpoint.list({ limit: 1000 });
-  catalogCache = { at: Date.now(), apis: apis.items, endpoints: endpoints.items };
-  return catalogCache;
-}
-
-// In-memory sliding-window limiter (per isolate).
-function checkRate(keyId, minuteLimit, dayLimit) {
+function memRate(keyId: string, minuteLimit: number, dayLimit: number) {
   const now = Date.now();
-  const minuteStart = Math.floor(now / 60000) * 60000;
-  const dayStart = Math.floor(now / 86400000) * 86400000;
-  if (rateState.size > 2000) rateState.clear();
-  let state = rateState.get(keyId);
-  if (!state) {
-    state = { minuteStart, minuteCount: 0, dayStart, dayCount: 0 };
-    rateState.set(keyId, state);
-  }
-  if (state.minuteStart !== minuteStart) { state.minuteStart = minuteStart; state.minuteCount = 0; }
-  if (state.dayStart !== dayStart) { state.dayStart = dayStart; state.dayCount = 0; }
-  state.minuteCount += 1;
-  state.dayCount += 1;
+  const m = Math.floor(now / 60000);
+  const d = Math.floor(now / 86400000);
+  let st = cache.rl.get(keyId);
+  if (!st) { st = { m, mc: 0, d, dc: 0 }; cache.rl.set(keyId, st); }
+  if (st.m !== m) { st.m = m; st.mc = 0; }
+  if (st.d !== d) { st.d = d; st.dc = 0; }
+  st.mc += 1; st.dc += 1;
+  if (cache.rl.size > 4000) cache.rl.clear();
   return {
-    minuteExceeded: state.minuteCount > minuteLimit,
-    dayExceeded: state.dayCount > dayLimit,
-    minuteRemaining: Math.max(0, minuteLimit - state.minuteCount),
-    dayRemaining: Math.max(0, dayLimit - state.dayCount),
+    minuteExceeded: st.mc > minuteLimit,
+    dayExceeded: st.dc > dayLimit,
+    minuteRemaining: Math.max(0, minuteLimit - st.mc),
+    dayRemaining: Math.max(0, dayLimit - st.dc),
   };
 }
 
-// ---------------------------------------------------------------- native handlers
-const HANDLERS = {
-  'system.health': async ({ base44, catalog }) => {
-    const started = performance.now();
-    await base44.asServiceRole.entities.ApiService.list({ limit: 1 });
-    const latency = performance.now() - started;
+async function dbRate(base44: any, keyId: string, minuteLimit: number, dayLimit: number) {
+  const now = Date.now();
+  const mStart = Math.floor(now / 60000) * 60000;
+  const dStart = Math.floor(now / 86400000) * 86400000;
+  const scope = 'k:' + keyId;
+  const mIso = new Date(mStart).toISOString();
+  const dIso = new Date(dStart).toISOString();
+  const found = await base44.asServiceRole.entities.ApiRateLimitCounter.filter({ scope_key: scope }, { limit: 1 });
+  const rec = found.items[0];
+  let mc: number; let dc: number;
+  if (!rec) {
+    mc = 1; dc = 1;
+    await base44.asServiceRole.entities.ApiRateLimitCounter.create({
+      scope_key: scope, api_key_id: keyId, window_type: 'minute', window_start: mIso, count: 1,
+      minute_start: mIso, minute_count: 1, day_start: dIso, day_count: 1,
+    });
+  } else {
+    const sameM = !!(rec.minute_start && new Date(rec.minute_start).getTime() === mStart);
+    const sameD = !!(rec.day_start && new Date(rec.day_start).getTime() === dStart);
+    mc = (sameM ? Number(rec.minute_count || 0) : 0) + 1;
+    dc = (sameD ? Number(rec.day_count || 0) : 0) + 1;
+    await base44.asServiceRole.entities.ApiRateLimitCounter.update(rec.id, {
+      window_start: mIso, count: mc, minute_start: mIso, minute_count: mc, day_start: dIso, day_count: dc,
+    });
+  }
+  return {
+    minuteExceeded: mc > minuteLimit,
+    dayExceeded: dc > dayLimit,
+    minuteRemaining: Math.max(0, minuteLimit - mc),
+    dayRemaining: Math.max(0, dayLimit - dc),
+  };
+}
+
+async function loadCatalog(base44: any) {
+  if (cache.catalog && Date.now() - cache.catalogAt < CAT_TTL) return cache.catalog;
+  const apis = await base44.asServiceRole.entities.ApiService.list({ limit: 500 });
+  const eps = await base44.asServiceRole.entities.ApiEndpoint.list({ limit: 1000 });
+  cache.catalog = { apis: apis.items || [], endpoints: eps.items || [] };
+  cache.catalogAt = Date.now();
+  return cache.catalog;
+}
+
+function str(v: any) { return typeof v === 'string' ? v.trim() : ''; }
+
+// ---------- AI helpers (platform Core integration, no external provider key) ----------
+async function llm(base44: any, prompt: string) {
+  const r = await base44.asServiceRole.integrations.Core.InvokeLLM({ prompt });
+  if (typeof r === 'string') return r;
+  if (r && typeof r === 'object') return (r as any).text || (r as any).result || JSON.stringify(r);
+  return String(r);
+}
+
+function parseJsonish(text: string) {
+  const t = String(text).trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+  try { return JSON.parse(t); } catch (_) { /* fall through */ }
+  const m = t.match(/\{[\s\S]*\}/);
+  if (m) { try { return JSON.parse(m[0]); } catch (_) { /* ignore */ } }
+  return null;
+}
+
+const AI_MAX_INPUT = 12000;
+
+function aiInput(payload: any) {
+  const text = str(payload.text) || str(payload.message) || str(payload.prompt) || str(payload.input);
+  if (!text) return { error: json(400, { ok: false, status: 400, data: { error: 'missing_parameter', message: '"text" is required.' } }) };
+  if (text.length > AI_MAX_INPUT) {
+    return { error: json(400, { ok: false, status: 400, data: { error: 'invalid_parameter', message: 'text exceeds ' + AI_MAX_INPUT + ' characters.' } }) };
+  }
+  return { text };
+}
+
+// ---------- handler registry ----------
+const HANDLERS: Record<string, (ctx: any) => Promise<any>> = {
+  'system.time': async () => {
+    const now = new Date();
+    return { status: 200, body: { utc_iso: now.toISOString(), unix_seconds: Math.floor(now.getTime() / 1000), unix_ms: now.getTime(), timezone: 'UTC' } };
+  },
+
+  'system.health': async () => {
+    const t0 = performance.now();
+    const apis = await base44.entities.ApiService.list({ limit: 500 });
+    const latency = Math.max(1, Math.round(performance.now() - t0));
+    const cat = cache.catalog || {};
     return {
       status: 200,
       body: {
         status: 'operational',
-        service: 'api-provider-platform',
-        database_latency_ms: Math.round(latency * 100) / 100,
-        apis_total: catalog.apis.length,
-        apis_active: catalog.apis.filter((a) => a.status === 'active').length,
-        endpoints_total: catalog.endpoints.length,
-        checked_at: new Date().toISOString(),
-      },
-    };
-  },
-
-  'system.time': async () => {
-    const now = new Date();
-    return {
-      status: 200,
-      body: {
-        utc_iso: now.toISOString(),
-        unix_seconds: Math.floor(now.getTime() / 1000),
-        unix_ms: now.getTime(),
-        timezone: 'UTC',
-        weekday: now.toUTCString().split(',')[0],
+        database_latency_ms: latency,
+        database_ok: (apis.items || []).length >= 0,
+        apis_total: (cat.apis || []).length || (apis.items || []).length,
+        endpoints_total: (cat.endpoints || []).length,
+        timestamp: new Date().toISOString(),
+        region: 'managed',
       },
     };
   },
 
   'crypto.sha256': async ({ body, params }) => {
-    const text = body.text !== undefined ? body.text : params.text;
-    if (typeof text !== 'string' || text.length === 0) {
-      return { status: 400, body: { error: 'missing_parameter', message: '"text" (non-empty string) is required.' } };
-    }
-    if (text.length > 50000) {
-      return { status: 413, body: { error: 'payload_too_large', message: 'text is limited to 50000 characters.' } };
-    }
-    return { status: 200, body: { algorithm: 'SHA-256', input_length: text.length, hex: await sha256hex(text) } };
+    const text = str(body.text) || str(params.text);
+    if (!text) return { status: 400, body: { error: 'missing_parameter', message: '"text" (non-empty string) is required.' } };
+    const hex = await sha256hex(text);
+    return { status: 200, body: { algorithm: 'SHA-256', hex, input_bytes: new TextEncoder().encode(text).length } };
   },
 
   'crypto.random': async ({ body, params }) => {
     const rawBytes = body.bytes !== undefined ? body.bytes : params.bytes;
     const bytes = rawBytes === undefined ? 32 : Number(rawBytes);
+    const encoding = str(body.encoding) || str(params.encoding) || 'hex';
     if (!Number.isInteger(bytes) || bytes < 1 || bytes > 256) {
-      return { status: 400, body: { error: 'invalid_parameter', message: '"bytes" must be an integer between 1 and 256.' } };
+      return { status: 400, body: { error: 'invalid_parameter', message: '"bytes" must be an integer from 1 to 256.' } };
     }
-    const encoding = String(body.encoding || params.encoding || 'hex').toLowerCase();
-    if (!['hex', 'base64'].includes(encoding)) {
-      return { status: 400, body: { error: 'invalid_parameter', message: '"encoding" must be hex or base64.' } };
-    }
-    const buffer = crypto.getRandomValues(new Uint8Array(bytes));
-    let value;
-    if (encoding === 'hex') {
-      value = toHex(buffer);
+    const buf = new Uint8Array(bytes);
+    crypto.getRandomValues(buf);
+    let value: string;
+    if (encoding === 'base64') {
+      value = btoa(Array.from(buf).map((b) => String.fromCharCode(b)).join(''));
     } else {
-      let binary = '';
-      for (const b of buffer) binary += String.fromCharCode(b);
-      value = btoa(binary);
+      value = Array.from(buf).map((b) => b.toString(16).padStart(2, '0')).join('');
     }
-    return { status: 200, body: { encoding, bytes, value } };
+    return { status: 200, body: { encoding: encoding === 'base64' ? 'base64' : 'hex', bytes, value } };
   },
 
   'text.slugify': async ({ body, params }) => {
-    const text = body.text !== undefined ? body.text : params.text;
-    if (typeof text !== 'string' || text.trim() === '') {
-      return { status: 400, body: { error: 'missing_parameter', message: '"text" (non-empty string) is required.' } };
-    }
-    const slug = slugify(text).slice(0, 120);
-    return { status: 200, body: { input: text, slug, length: slug.length } };
+    const text = str(body.text) || str(params.text);
+    if (!text) return { status: 400, body: { error: 'missing_parameter', message: '"text" (non-empty string) is required.' } };
+    const slug = text.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    return { status: 200, body: { slug, input_length: text.length } };
   },
 
   'text.stats': async ({ body, params }) => {
-    const text = body.text !== undefined ? body.text : params.text;
-    if (typeof text !== 'string' || text === '') {
-      return { status: 400, body: { error: 'missing_parameter', message: '"text" (non-empty string) is required.' } };
-    }
-    const words = text.trim() === '' ? [] : text.trim().split(/\s+/);
-    const unique = new Set(words.map((w) => w.toLowerCase().replace(/[^a-z0-9]/gi, '')).filter(Boolean));
+    const text = str(body.text) || str(params.text);
+    if (!text) return { status: 400, body: { error: 'missing_parameter', message: '"text" (non-empty string) is required.' } };
+    const words = text.split(/\s+/).filter(Boolean);
+    const sentences = text.split(/[.!?]+/).filter((s) => s.trim().length > 0);
     return {
       status: 200,
       body: {
+        input_length: text.length,
         characters: text.length,
         characters_no_spaces: text.replace(/\s/g, '').length,
         words: words.length,
-        unique_words: unique.size,
-        lines: text.split(/\r\n|\r|\n/).length,
-        sentences: (text.match(/[.!?]+(\s|$)/g) || []).length || (words.length ? 1 : 0),
+        unique_words: new Set(words.map((w) => w.toLowerCase())).size,
+        sentences: sentences.length,
+        lines: text.split(/\r?\n/).length,
       },
     };
   },
+
+  'echo.request': async ({ body, params, headers, api_key }) => ({
+    status: 200,
+    body: {
+      method: (headers['x-http-method'] || 'POST').toUpperCase(),
+      api_key_prefix: api_key ? api_key.prefix : null,
+      query: Object.fromEntries(params.entries()),
+      body,
+      received_at: new Date().toISOString(),
+    },
+  }),
 
   'json.validate': async ({ body, params }) => {
-    let candidate = body.json !== undefined ? body.json : params.json;
-    if (candidate === undefined) {
+    const raw = body.json !== undefined ? body.json : params.json;
+    if (raw === undefined || raw === null || raw === '') {
       return { status: 400, body: { error: 'missing_parameter', message: '"json" (string) is required.' } };
     }
-    if (typeof candidate !== 'string') candidate = JSON.stringify(candidate);
     try {
-      const parsed = JSON.parse(candidate);
-      return {
-        status: 200,
-        body: {
-          valid: true,
-          type: Array.isArray(parsed) ? 'array' : typeof parsed,
-          key_count: parsed && typeof parsed === 'object' ? Object.keys(parsed).length : 0,
-          parsed,
-        },
-      };
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return { status: 200, body: { valid: true, type: Array.isArray(parsed) ? 'array' : typeof parsed, parsed } };
     } catch (e) {
-      return { status: 200, body: { valid: false, error: String(e && e.message ? e.message : e) } };
+      return { status: 200, body: { valid: false, error: String((e as Error).message || e) } };
     }
   },
 
-  'platform.usage': async ({ base44, api_key }) => {
-    const logs = await base44.asServiceRole.entities.ApiRequestLog.filter(
-      { api_key_id: api_key.id }, { sort: '-created_date', limit: 500 },
-    );
-    const total = logs.items.length;
-    const success = logs.items.filter((l) => l.success).length;
-    const times = logs.items.map((l) => Number(l.response_time_ms) || 0).sort((a, b) => a - b);
-    const avg = total ? Math.round((times.reduce((s, t) => s + t, 0) / total) * 100) / 100 : 0;
-    const p95 = total ? times[Math.min(total - 1, Math.floor(total * 0.95))] : 0;
-    // Persist the derived totals onto the key record (one write, only when this endpoint is used).
-    try {
-      await base44.asServiceRole.entities.ApiKey.update(api_key.id, {
-        request_count: total,
-        success_count: success,
-        error_count: total - success,
-        last_used_at: logs.items[0] ? logs.items[0].created_date : api_key.last_used_at,
-      });
-    } catch (_) { /* best effort */ }
+  'platform.usage': async ({ base44: b, api_key }) => {
+    const logs = await b.asServiceRole.entities.ApiRequestLog.filter({ api_key_id: api_key.id }, { sort: '-created_date', limit: 500 });
+    const rows = logs.items || [];
+    const ok = rows.filter((r: any) => r.success).length;
+    const avg = rows.length ? Math.round(rows.reduce((a: number, r: any) => a + Number(r.response_time_ms || 0), 0) / rows.length) : 0;
     return {
       status: 200,
       body: {
-        api_key_prefix: api_key.prefix,
-        key_name: api_key.name,
-        window: 'most recent 500 requests',
-        total_requests: total,
-        successful: success,
-        failed: total - success,
-        success_rate_percent: total ? Math.round((success / total) * 10000) / 100 : 0,
+        api_key_prefix: api_key.prefix + (api_key.last4 || ''),
+        requests: rows.length,
+        success: ok,
+        failed: rows.length - ok,
         avg_response_time_ms: avg,
-        p95_response_time_ms: p95,
+        window: 'last 500 calls',
       },
     };
   },
 
-  'data.apis.list': async ({ catalog }) => {
-    const list = catalog.apis
-      .filter((a) => a.status === 'active' && a.is_public !== false)
-      .map((a) => ({
-        name: a.name,
-        slug: a.slug,
-        description: a.description,
-        category: a.category_slug,
-        version: a.version,
-        base_path: a.base_path,
-      }));
-    return { status: 200, body: { count: list.length, apis: list } };
-  },
-
-  'data.endpoints.list': async ({ catalog, body, params }) => {
-    const apiSlug = String(body.api_slug || params.api_slug || '');
-    const list = catalog.endpoints
-      .filter((e) => e.is_active !== false && (!apiSlug || e.api_slug === apiSlug))
-      .map((e) => ({ api: e.api_slug, name: e.name, slug: e.slug, method: e.method, path: e.path, summary: e.summary }));
-    return { status: 200, body: { count: list.length, endpoints: list } };
-  },
-
-  'echo.request': async ({ body, params, headers, api_key, request }) => {
-    const notable = {};
-    for (const h of ['content-type', 'user-agent', 'accept-language']) {
-      if (headers.get(h)) notable[h] = headers.get(h);
-    }
+  'data.apis.list': async () => {
+    const cat = await loadCatalog(base44);
+    const published = (cat.apis || []).filter((a: any) => a.status === 'active' && a.is_public !== false);
     return {
       status: 200,
       body: {
-        authenticated: true,
-        api_key_prefix: api_key.prefix,
-        http_method: request.method,
-        params,
-        body,
-        notable_headers: notable,
-        received_at: new Date().toISOString(),
+        count: published.length,
+        apis: published.map((a: any) => ({
+          name: a.name, slug: a.slug, description: a.description, version: a.version,
+          category: a.category_slug, base_path: a.base_path,
+          endpoints: (cat.endpoints || []).filter((e: any) => e.api_slug === a.slug && e.is_active !== false).length,
+        })),
       },
     };
+  },
+
+  'data.endpoints.list': async ({ body, params }) => {
+    const slug = str(body.api_slug) || str(params.api_slug);
+    const cat = await loadCatalog(base44);
+    const eps = (cat.endpoints || []).filter((e: any) => (!slug || e.api_slug === slug) && e.is_active !== false);
+    return {
+      status: 200,
+      body: {
+        api_slug: slug || null,
+        count: eps.length,
+        endpoints: eps.map((e: any) => ({ name: e.name, slug: e.slug, method: e.method, path: e.path, summary: e.summary })),
+      },
+    };
+  },
+
+  // ---- AI endpoints: executed by the platform model runtime ----
+  'ai.chat': async ({ base44: b, body }) => {
+    const message = str(body.message) || str(body.text) || str(body.prompt);
+    if (!message) return { status: 400, body: { error: 'missing_parameter', message: '"message" is required.' } };
+    if (message.length > AI_MAX_INPUT) return { status: 400, body: { error: 'invalid_parameter', message: 'message too long' } };
+    const system = str(body.system);
+    const prompt = system
+      ? 'System instruction: ' + system + '\n\nUser: ' + message + '\n\nAnswer the user directly.'
+      : message;
+    const reply = await llm(b, prompt + '\n\nRespond in the same language as the user.');
+    return { status: 200, body: { reply: String(reply).trim(), model: 'base44-core', input_length: message.length } };
+  },
+
+  'ai.summarize': async ({ base44: b, body }) => {
+    const g = aiInput(body);
+    if (g.error) return g.error;
+    const maxWords = Math.max(10, Math.min(400, Number(body.max_words) || 80));
+    const out = await llm(b, 'Summarize the following text in at most ' + maxWords + ' words. Return only the summary, no preamble.\n\nTEXT:\n' + g.text);
+    return { status: 200, body: { summary: String(out).trim(), max_words: maxWords, input_length: g.text.length } };
+  },
+
+  'ai.sentiment': async ({ base44: b, body }) => {
+    const g = aiInput(body);
+    if (g.error) return g.error;
+    const out = await llm(b, 'Classify the sentiment of the text. Reply ONLY with JSON: {"sentiment":"positive|negative|neutral","confidence":0-1,"reasons":["..."]}\n\nTEXT:\n' + g.text);
+    const parsed = parseJsonish(out) || {};
+    return {
+      status: 200,
+      body: {
+        sentiment: parsed.sentiment || 'neutral',
+        confidence: Number(parsed.confidence) || 0,
+        reasons: Array.isArray(parsed.reasons) ? parsed.reasons.slice(0, 5) : [],
+        input_length: g.text.length,
+      },
+    };
+  },
+
+  'ai.translate': async ({ base44: b, body }) => {
+    const g = aiInput(body);
+    if (g.error) return g.error;
+    const target = str(body.target_language) || str(body.to) || 'English';
+    const source = str(body.source_language) || str(body.from);
+    const out = await llm(b, 'Translate the following text into ' + target + (source ? ' from ' + source : '') + '. Return only the translation.\n\nTEXT:\n' + g.text);
+    return { status: 200, body: { translation: String(out).trim(), target_language: target, source_language: source || 'auto' } };
+  },
+
+  'ai.classify': async ({ base44: b, body }) => {
+    const g = aiInput(body);
+    if (g.error) return g.error;
+    const cats = Array.isArray(body.categories) ? body.categories.filter((c: any) => typeof c === 'string').slice(0, 30) : [];
+    if (!cats.length) return { status: 400, body: { error: 'missing_parameter', message: '"categories" (array of strings) is required.' } };
+    const out = await llm(b, 'Choose exactly one of these categories: ' + cats.join(', ') + '.\nReply ONLY with JSON: {"category":"<one of the given categories>","confidence":0-1}\n\nTEXT:\n' + g.text);
+    const parsed = parseJsonish(out) || {};
+    const picked = cats.includes(parsed.category) ? parsed.category : null;
+    return { status: 200, body: { category: picked, confidence: Number(parsed.confidence) || 0, allowed: cats, matched: !!picked } };
+  },
+
+  'ai.keywords': async ({ base44: b, body }) => {
+    const g = aiInput(body);
+    if (g.error) return g.error;
+    const limit = Math.max(1, Math.min(30, Number(body.limit) || 8));
+    const out = await llm(b, 'Extract the ' + limit + ' most important keywords or key phrases. Reply ONLY with JSON: {"keywords":["..."]}\n\nTEXT:\n' + g.text);
+    const parsed = parseJsonish(out) || {};
+    const kws = Array.isArray(parsed.keywords) ? parsed.keywords.filter((k: any) => typeof k === 'string').slice(0, limit) : [];
+    return { status: 200, body: { keywords: kws, limit, input_length: g.text.length } };
   },
 };
 
-function reply(status, payload, extraHeaders = {}) {
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: { 'Content-Type': 'application/json', ...CORS, ...extraHeaders },
-  });
-}
-
-function isCapacityError(e) {
-  const m = String(e && e.message ? e.message : e);
-  return /rate limit|allows \d+ requests per|quota/i.test(m);
-}
-
 Deno.serve(async (req) => {
+  const t0 = performance.now();
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
 
-  const startedAt = performance.now();
+  const requestId = rid();
   const base44 = createClientFromRequest(req);
-  const requestId = `req_${toHex(crypto.getRandomValues(new Uint8Array(8)))}`;
-  const ipAddress = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim();
-  const userAgent = (req.headers.get('user-agent') || '').slice(0, 200);
-  const clientSource = req.headers.get('x-client-source') === 'playground' ? 'playground' : 'api';
-  const url = new URL(req.url);
+  const headers: Record<string, string> = {};
+  for (const [k, v] of req.headers.entries()) headers[k.toLowerCase()] = v;
 
-  let apiKeyRecord = null;
-  let developerRecord = null;
-  let resolvedApi = null;
-  let resolvedEndpoint = null;
-  let body = {};
+  let apiKey: any = null;
+  let developer: any = null;
+  let body: any = {};
+  let params = new URL(req.url).searchParams;
 
-  const writeLog = async (status, errorCode) => {
+  const elapsed = () => Math.round(performance.now() - t0);
+
+  async function logRow(entry: any) {
     try {
       await base44.asServiceRole.entities.ApiRequestLog.create({
-        developer_id: developerRecord ? developerRecord.id : null,
-        developer_email: developerRecord ? developerRecord.email : null,
-        api_key_id: apiKeyRecord ? apiKeyRecord.id : null,
-        api_key_prefix: apiKeyRecord ? `${apiKeyRecord.prefix}${apiKeyRecord.last4 || ''}` : null,
-        api_id: resolvedApi ? resolvedApi.id : null,
-        api_slug: resolvedApi ? resolvedApi.slug : (body.api || null),
-        endpoint_id: resolvedEndpoint ? resolvedEndpoint.id : null,
-        endpoint_path: resolvedEndpoint ? resolvedEndpoint.path : (body.path || null),
-        method: req.method,
-        status_code: status,
-        response_time_ms: Math.round((performance.now() - startedAt) * 100) / 100,
-        success: status >= 200 && status < 400,
-        error_code: errorCode,
-        ip_address: ipAddress,
-        user_agent: userAgent,
+        developer_id: developer ? developer.id : null,
+        developer_email: developer ? developer.email : null,
+        api_key_id: apiKey ? apiKey.id : null,
+        api_key_prefix: apiKey ? apiKey.prefix + (apiKey.last4 || '') : null,
+        api_id: entry.api_id || null,
+        api_slug: entry.api_slug || null,
+        endpoint_id: entry.endpoint_id || null,
+        endpoint_path: entry.endpoint_path || null,
+        method: entry.method || 'POST',
+        status_code: entry.status_code,
+        response_time_ms: entry.response_time_ms || elapsed(),
+        success: !!entry.success,
+        error_code: entry.error_code || null,
+        ip_address: headers['x-real-ip'] || headers['x-forwarded-for'] || null,
+        user_agent: headers['user-agent'] || null,
         request_id: requestId,
-        source: clientSource,
+        source: headers['x-client-source'] === 'playground' ? 'playground' : 'api',
       });
-    } catch (_) { /* audit logging is best effort; never fail the caller */ }
-  };
+    } catch (_) { /* auditing must never break the response */ }
+  }
 
-  const finish = async (status, payload, headers = {}, errorCode = null) => {
-    await writeLog(status, errorCode);
-    return reply(status, payload, { ...headers, 'X-Request-Id': requestId });
-  };
+  function finish(status: number, payload: any, errorCode?: string, meta?: any) {
+    const needsDataShim = payload && payload.error && !payload.data && status === 400;
+    const out: any = {
+      ok: status < 400,
+      status,
+      request_id: requestId,
+      api: meta && meta.api_slug ? meta.api_slug : null,
+      endpoint: meta && meta.endpoint_slug ? meta.endpoint_slug : null,
+      http_method: req.method,
+      response_time_ms: elapsed(),
+      data: needsDataShim ? payload : (payload && payload.body !== undefined ? payload.body : payload),
+    };
+    if (status >= 400 && !needsDataShim) out.error = { code: errorCode || 'error', message: (payload && payload.message) || (payload && payload.error) || 'Request failed.' };
+    if (meta && meta.rate_limit) out.meta = { rate_limit: meta.rate_limit };
+    logRow({
+      api_id: meta && meta.api_id, api_slug: meta && meta.api_slug,
+      endpoint_id: meta && meta.endpoint_id, endpoint_path: meta && meta.endpoint_path,
+      method: meta && meta.method ? meta.method : req.method,
+      status_code: status, success: status < 400, error_code: errorCode,
+    });
+    return json(status, out);
+  }
 
   try {
-    // ---- parse input
-    const rawText = req.method === 'GET' || req.method === 'DELETE' ? '' : await req.text();
-    if (rawText) {
-      if (rawText.length > MAX_BODY_BYTES) {
-        return finish(413, { ok: false, error: { code: 'payload_too_large', message: 'Request body exceeds 100KB.' }, request_id: requestId }, {}, 'payload_too_large');
-      }
+    let rawKey = str(headers['x-api-key']);
+    if (!rawKey && headers['authorization']) rawKey = str(headers['authorization'].replace(/^Bearer\s+/i, ''));
+
+    // body parsing
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
       try {
-        body = JSON.parse(rawText);
-        if (!body || typeof body !== 'object' || Array.isArray(body)) {
-          return finish(400, { ok: false, error: { code: 'invalid_body', message: 'JSON body must be an object.' }, request_id: requestId }, {}, 'invalid_body');
-        }
-      } catch (_) {
-        return finish(400, { ok: false, error: { code: 'invalid_json', message: 'Request body is not valid JSON.' }, request_id: requestId }, {}, 'invalid_json');
-      }
+        const text = await req.text();
+        if (text && text.length > 200000) return finish(413, { error: 'payload_too_large', message: 'Request body exceeds 200KB.' }, 'payload_too_large');
+        if (text) { try { body = JSON.parse(text); } catch (_) { return finish(400, { error: 'invalid_json', message: 'Request body must be valid JSON.' }, 'invalid_json'); } }
+      } catch (_) { body = {}; }
     }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) body = {};
 
-    const params = {};
-    for (const [k, v] of url.searchParams.entries()) params[k] = v;
-
-    // ---- 1. authenticate
-    const rawKey = (req.headers.get('x-api-key')
-      || (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')).trim();
-    const sessionHeader = (req.headers.get('x-developer-token') || '').trim();
-    const delegatedKeyId = (req.headers.get('x-playground-key') || '').trim();
-
+    // ---------- authentication ----------
     if (rawKey) {
-      if (!rawKey.startsWith('sk_live_')) {
-        return finish(401, { ok: false, error: { code: 'invalid_api_key', message: 'API key format is not recognised.' }, request_id: requestId }, {}, 'invalid_api_key');
+      if (!KEY_PREFIXES.some((p) => rawKey.startsWith(p))) {
+        return finish(401, { error: 'invalid_api_key', message: 'Malformed API key.' }, 'invalid_api_key');
       }
       const hash = await sha256hex(rawKey);
-      apiKeyRecord = cacheGet(keyCache, hash, KEY_TTL);
-      if (!apiKeyRecord) {
-        const keyFound = await base44.asServiceRole.entities.ApiKey.filter({ key_hash: hash }, { limit: 1 });
-        apiKeyRecord = keyFound.items[0] || null;
-        if (apiKeyRecord) cacheSet(keyCache, hash, apiKeyRecord);
+      const cached = cache.keys.get(hash);
+      if (cached && Date.now() - cached.at < KEY_TTL) {
+        apiKey = cached.record;
+      } else {
+        const found = await base44.asServiceRole.entities.ApiKey.filter({ key_hash: hash }, { limit: 1 });
+        apiKey = found.items[0] || null;
+        if (apiKey) cache.keys.set(hash, { record: apiKey, at: Date.now() });
       }
-      if (!apiKeyRecord) {
-        return finish(401, { ok: false, error: { code: 'invalid_api_key', message: 'API key is invalid or has been revoked.' }, request_id: requestId }, {}, 'invalid_api_key');
+      if (!apiKey) return finish(401, { error: 'invalid_api_key', message: 'API key is not recognised.' }, 'invalid_api_key');
+      if (apiKey.status === 'revoked') return finish(403, { error: 'key_revoked', message: 'This API key is revoked and cannot be used.' }, 'key_revoked');
+      if (apiKey.expires_at && new Date(apiKey.expires_at).getTime() < Date.now()) {
+        return finish(403, { error: 'key_expired', message: 'This API key has expired.' }, 'key_expired');
       }
-    } else if (sessionHeader && delegatedKeyId) {
-      const sHash = await sha256hex(sessionHeader);
-      let session = cacheGet(sessionCache, sHash, SESSION_TTL);
-      if (!session) {
-        const sessFound = await base44.asServiceRole.entities.DeveloperSession.filter({ token_hash: sHash }, { limit: 1 });
-        session = sessFound.items[0] || null;
-        if (session) cacheSet(sessionCache, sHash, session);
+    } else if (headers['x-developer-token'] && headers['x-playground-key']) {
+      const th = await sha256hex(str(headers['x-developer-token']));
+      let sess = cache.sessions.get(th);
+      if (!sess || Date.now() - sess.at > SESS_TTL) {
+        const s = await base44.asServiceRole.entities.DeveloperSession.filter({ token_hash: th }, { limit: 1 });
+        sess = { record: s.items[0] || null, at: Date.now() };
+        cache.sessions.set(th, sess);
       }
-      if (!session || session.revoked || new Date(session.expires_at).getTime() < Date.now()) {
-        return finish(401, { ok: false, error: { code: 'invalid_session', message: 'Developer session token is invalid or expired.' }, request_id: requestId }, {}, 'invalid_session');
+      const s = sess.record;
+      if (!s || s.revoked || new Date(s.expires_at).getTime() < Date.now()) {
+        return finish(401, { error: 'invalid_session', message: 'Developer session is invalid or expired.' }, 'invalid_session');
       }
-      apiKeyRecord = cacheGet(keyByIdCache, delegatedKeyId, KEY_TTL);
-      if (!apiKeyRecord) {
-        const keyFound = await base44.asServiceRole.entities.ApiKey.filter({ id: delegatedKeyId }, { limit: 1 });
-        apiKeyRecord = keyFound.items[0] || null;
-        if (apiKeyRecord) cacheSet(keyByIdCache, delegatedKeyId, apiKeyRecord);
+      const k = await base44.asServiceRole.entities.ApiKey.filter({ id: str(headers['x-playground-key']) }, { limit: 1 });
+      apiKey = k.items[0] || null;
+      if (!apiKey || apiKey.developer_id !== s.developer_id) {
+        return finish(403, { error: 'forbidden', message: 'That API key does not belong to your account.' }, 'forbidden');
       }
-      if (!apiKeyRecord || apiKeyRecord.developer_id !== session.developer_id) {
-        return finish(403, { ok: false, error: { code: 'forbidden', message: 'That API key does not belong to your account.' }, request_id: requestId }, {}, 'forbidden');
-      }
+      if (apiKey.status === 'revoked') return finish(403, { error: 'key_revoked', message: 'This API key is revoked and cannot be used.' }, 'key_revoked');
     } else {
-      return finish(401, {
-        ok: false,
-        error: { code: 'missing_api_key', message: 'Provide your secret key in the X-Api-Key header.' },
-        request_id: requestId,
-      }, {}, 'missing_api_key');
+      return finish(401, { error: 'missing_api_key', message: 'Send your key in the X-Api-Key header.' }, 'missing_api_key');
     }
 
-    if (apiKeyRecord.status !== 'active') {
-      return finish(403, { ok: false, error: { code: 'key_revoked', message: 'This API key has been revoked.' }, request_id: requestId }, {}, 'key_revoked');
+    // developer state
+    const devCacheKey = apiKey.developer_id;
+    let dev = cache.devs.get(devCacheKey);
+    if (!dev || Date.now() - dev.at > DEV_TTL) {
+      const d = await base44.asServiceRole.entities.DeveloperProfile.filter({ id: apiKey.developer_id }, { limit: 1 });
+      dev = { record: d.items[0] || null, at: Date.now() };
+      cache.devs.set(devCacheKey, dev);
     }
-    if (apiKeyRecord.expires_at && new Date(apiKeyRecord.expires_at).getTime() < Date.now()) {
-      return finish(403, { ok: false, error: { code: 'key_expired', message: 'This API key has expired.' }, request_id: requestId }, {}, 'key_expired');
-    }
+    developer = dev.record;
+    if (!developer) return finish(403, { error: 'forbidden', message: 'Developer account not found.' }, 'forbidden');
+    if (developer.status !== 'active') return finish(403, { error: 'account_suspended', message: 'This account is suspended.' }, 'account_suspended');
 
-    // ---- 2. developer state
-    developerRecord = cacheGet(devCache, apiKeyRecord.developer_id, CATALOG_TTL);
-    if (!developerRecord) {
-      const devFound = await base44.asServiceRole.entities.DeveloperProfile.filter({ id: apiKeyRecord.developer_id }, { limit: 1 });
-      developerRecord = devFound.items[0] || null;
-      if (developerRecord) cacheSet(devCache, apiKeyRecord.developer_id, developerRecord);
-    }
-    if (!developerRecord) {
-      return finish(403, { ok: false, error: { code: 'developer_not_found', message: 'The owning developer account no longer exists.' }, request_id: requestId }, {}, 'developer_not_found');
-    }
-    if (developerRecord.status !== 'active') {
-      return finish(403, { ok: false, error: { code: 'account_suspended', message: 'This developer account is suspended.' }, request_id: requestId }, {}, 'account_suspended');
-    }
+    // ---------- resolve target ----------
+    const cat = await loadCatalog(base44);
+    let api = null; let endpoint = null;
+    const apiSlug = str(body.api) || str(params.get('api'));
+    const epSlug = str(body.endpoint) || str(params.get('endpoint'));
+    const pathRef = str(body.path) || str(params.get('path'));
 
-    // ---- 3. resolve api + endpoint from the cached catalog
-    const catalog = await loadCatalog(base44, false);
-    const apiRef = String(body.api || params.api || '').trim();
-    const endpointRef = String(body.endpoint || params.endpoint || '').trim();
-    const pathRef = String(body.path || params.path || '').trim();
-
-    if (apiRef) {
-      resolvedApi = catalog.apis.find((a) => a.slug === apiRef) || null;
+    if (apiSlug) {
+      api = (cat.apis || []).find((a: any) => a.slug === apiSlug) || null;
+      if (!api) return finish(404, { error: 'api_not_found', message: 'No API with slug "' + apiSlug + '".' }, 'api_not_found');
+      if (epSlug) {
+        endpoint = (cat.endpoints || []).find((e: any) => e.api_slug === apiSlug && e.slug === epSlug) || null;
+      } else if (pathRef) {
+        endpoint = (cat.endpoints || []).find((e: any) => e.api_slug === apiSlug && e.path === pathRef) || null;
+      }
+      if (!endpoint) {
+        return finish(404, { error: 'endpoint_not_found', message: 'No endpoint "' + (epSlug || pathRef || '(none)') + '" under API "' + apiSlug + '".' }, 'endpoint_not_found');
+      }
     } else if (pathRef) {
-      resolvedApi = catalog.apis
-        .filter((a) => a.base_path && (pathRef === a.base_path || pathRef.startsWith(`${a.base_path}/`)))
-        .sort((a, b) => (b.base_path || '').length - (a.base_path || '').length)[0] || null;
-    }
-
-    if (!resolvedApi) {
-      return finish(404, {
-        ok: false,
-        error: { code: 'api_not_found', message: 'Unknown API. Send {"api":"<slug>","endpoint":"<slug>"} or ?path=/your/path.' },
-        request_id: requestId,
-      }, {}, 'api_not_found');
-    }
-    if (resolvedApi.status !== 'active') {
-      return finish(403, { ok: false, error: { code: 'api_inactive', message: `API "${resolvedApi.slug}" is not currently active.` }, request_id: requestId }, {}, 'api_inactive');
-    }
-
-    const keyAllowlist = Array.isArray(apiKeyRecord.api_slugs) ? apiKeyRecord.api_slugs : [];
-    if (keyAllowlist.length > 0 && !keyAllowlist.includes(resolvedApi.slug)) {
-      return finish(403, {
-        ok: false,
-        error: { code: 'api_not_permitted', message: `This API key is not scoped to "${resolvedApi.slug}".` },
-        request_id: requestId,
-      }, {}, 'api_not_permitted');
-    }
-
-    resolvedEndpoint = endpointRef
-      ? catalog.endpoints.find((e) => e.api_slug === resolvedApi.slug && e.slug === endpointRef) || null
-      : catalog.endpoints.find((e) => e.api_slug === resolvedApi.slug && e.path === pathRef) || null;
-
-    if (!resolvedEndpoint) {
-      return finish(404, { ok: false, error: { code: 'endpoint_not_found', message: 'Unknown endpoint for this API.' }, request_id: requestId }, {}, 'endpoint_not_found');
-    }
-    if (resolvedEndpoint.is_active === false) {
-      return finish(403, { ok: false, error: { code: 'endpoint_inactive', message: 'This endpoint is disabled.' }, request_id: requestId }, {}, 'endpoint_inactive');
-    }
-    if (req.method !== resolvedEndpoint.method && req.method !== 'POST') {
-      return finish(405, {
-        ok: false,
-        error: { code: 'method_not_allowed', message: `This endpoint accepts ${resolvedEndpoint.method}.` },
-        request_id: requestId,
-      }, { Allow: resolvedEndpoint.method }, 'method_not_allowed');
-    }
-
-    // ---- 4. rate limiting
-    const minuteLimit = Number(
-      resolvedEndpoint.rate_limit_override
-        || apiKeyRecord.rate_limit_per_minute
-        || resolvedApi.default_rate_limit_per_minute
-        || developerRecord.rate_limit_per_minute
-        || 60,
-    );
-    const dayLimit = Number(apiKeyRecord.daily_quota || resolvedApi.default_daily_quota || developerRecord.daily_quota || 10000);
-    const rl = checkRate(apiKeyRecord.id, minuteLimit, dayLimit);
-
-    if (rl.minuteExceeded) {
-      return finish(429, {
-        ok: false,
-        error: { code: 'rate_limit_exceeded', message: `Rate limit of ${minuteLimit} requests/minute exceeded. Retry shortly.` },
-        request_id: requestId,
-        rate_limit: { limit: minuteLimit, remaining: 0, window: 'minute' },
-      }, { 'Retry-After': '60', 'X-RateLimit-Limit': String(minuteLimit), 'X-RateLimit-Remaining': '0' }, 'rate_limit_exceeded');
-    }
-    if (rl.dayExceeded) {
-      return finish(429, {
-        ok: false,
-        error: { code: 'daily_quota_exceeded', message: `Daily quota of ${dayLimit} requests exceeded.` },
-        request_id: requestId,
-        rate_limit: { limit: dayLimit, remaining: 0, window: 'day' },
-      }, { 'X-RateLimit-Limit': String(dayLimit), 'X-RateLimit-Remaining': '0' }, 'daily_quota_exceeded');
-    }
-
-    // ---- 5. dispatch
-    const handlerKey = resolvedEndpoint.handler_key || '';
-    const handler = HANDLERS[handlerKey];
-    let result;
-    if (!handler) {
-      result = {
-        status: 501,
-        body: {
-          error: 'handler_not_implemented',
-          message: handlerKey
-            ? `No native handler is registered for "${handlerKey}" yet.`
-            : 'This endpoint has no handler_key assigned.',
-          hint: 'Register the handler in the apiGateway HANDLERS map (Phase 2 native API work).',
-        },
-      };
+      api = (cat.apis || []).find((a: any) => pathRef === a.base_path || pathRef.startsWith(String(a.base_path || '') + '/')) || null;
+      if (!api) return finish(404, { error: 'api_not_found', message: 'No API matches path "' + pathRef + '".' }, 'api_not_found');
+      endpoint = (cat.endpoints || []).find((e: any) => e.api_slug === api.slug && e.path === pathRef) || null;
+      if (!endpoint) return finish(404, { error: 'endpoint_not_found', message: 'No endpoint at path "' + pathRef + '".' }, 'endpoint_not_found');
     } else {
-      try {
-        result = await handler({
-          base44, body, params, headers: req.headers,
-          api_key: apiKeyRecord, developer: developerRecord, request: req, catalog,
-        });
-      } catch (e) {
-        result = isCapacityError(e)
-          ? { status: 503, body: { error: 'platform_capacity', message: 'Upstream capacity limit reached. Retry shortly.' } }
-          : { status: 500, body: { error: 'handler_error', message: String(e && e.message ? e.message : e) } };
-      }
+      return finish(400, { error: 'missing_target', message: 'Provide "api" and "endpoint" (or "path").' }, 'missing_target');
     }
 
-    const isSuccess = result.status >= 200 && result.status < 400;
-    return finish(result.status, {
-      ok: isSuccess,
-      status: result.status,
+    if (api.status !== 'active') return finish(403, { error: 'api_inactive', message: 'This API is not currently published.' }, 'api_inactive', { api_slug: api.slug, endpoint_slug: endpoint.slug, api_id: api.id, endpoint_id: endpoint.id, endpoint_path: endpoint.path, method: endpoint.method });
+    if (endpoint.is_active === false) return finish(403, { error: 'endpoint_inactive', message: 'This endpoint is disabled.' }, 'endpoint_inactive');
+
+    // method: POST is the gateway envelope verb; otherwise the endpoint verb must match
+    const method = String(endpoint.method || 'POST').toUpperCase();
+    if (req.method !== 'POST' && req.method !== method) {
+      return finish(405, { error: 'method_not_allowed', message: 'This endpoint accepts ' + method + '.' }, 'method_not_allowed',
+        { api_slug: api.slug, endpoint_slug: endpoint.slug, api_id: api.id, endpoint_id: endpoint.id, endpoint_path: endpoint.path, method });
+    }
+
+    // per-key API allowlist
+    const allowed = Array.isArray(apiKey.api_slugs) ? apiKey.api_slugs : [];
+    if (allowed.length && !allowed.includes(api.slug)) {
+      return finish(403, { error: 'api_not_permitted', message: 'This key is not permitted to call the ' + api.slug + ' API.' }, 'api_not_permitted',
+        { api_slug: api.slug, endpoint_slug: endpoint.slug, api_id: api.id, endpoint_id: endpoint.id, endpoint_path: endpoint.path, method });
+    }
+
+    // ---------- rate limiting ----------
+    const minuteLimit = Number(endpoint.rate_limit_override || apiKey.rate_limit_per_minute || api.default_rate_limit_per_minute || 60);
+    const dayLimit = Number(apiKey.daily_quota || api.default_daily_quota || 10000);
+    const metaBase = { api_slug: api.slug, endpoint_slug: endpoint.slug, api_id: api.id, endpoint_id: endpoint.id, endpoint_path: endpoint.path, method };
+
+    let rl = memRate(apiKey.id, minuteLimit, dayLimit);
+    if (rl.minuteExceeded || rl.dayExceeded) {
+      return finish(429, { error: 'rate_limit_exceeded', message: 'Rate limit reached. Retry after the window resets.' }, 'rate_limit_exceeded',
+        { ...metaBase, rate_limit: { limit_per_minute: minuteLimit, remaining: rl.minuteRemaining, quota_per_day: dayLimit, window: rl.minuteExceeded ? 'minute' : 'day' } },
+      );
+    }
+    try {
+      rl = await dbRate(base44, apiKey.id, minuteLimit, dayLimit);
+    } catch (_) { /* durable counter unavailable: fall back to the in-memory window */ }
+    if (rl.minuteExceeded || rl.dayExceeded) {
+      return finish(429, { error: 'rate_limit_exceeded', message: 'Rate limit reached. Retry after the window resets.' }, 'rate_limit_exceeded',
+        { ...metaBase, rate_limit: { limit_per_minute: minuteLimit, remaining: rl.minuteRemaining, quota_per_day: dayLimit, window: rl.minuteExceeded ? 'minute' : 'day' } },
+      );
+    }
+
+    // ---------- dispatch ----------
+    const handler = HANDLERS[endpoint.handler_key];
+    if (!handler) {
+      return finish(501, { error: 'unknown_handler', message: 'No handler is registered for handler_key "' + (endpoint.handler_key || '') + '".' }, 'unknown_handler', metaBase);
+    }
+
+    const RESERVED = new Set(['api', 'endpoint', 'path', 'body', 'params']);
+    const flat: any = {};
+    for (const [k, v] of Object.entries(body)) if (!RESERVED.has(k)) flat[k] = v;
+    const payload = {
+      ...flat,
+      ...(body.body && typeof body.body === 'object' && !Array.isArray(body.body) ? body.body : {}),
+      ...(body.params && typeof body.params === 'object' ? body.params : {}),
+    };
+
+    let result: any;
+    try {
+      result = await handler({ base44, body: payload, params, headers, api_key: apiKey, developer, api, endpoint });
+    } catch (e) {
+      const msg = String((e as Error).message || e);
+      const capacity = /rate limit|allows \d+ requests|quota/i.test(msg);
+      return finish(capacity ? 503 : 502, { error: capacity ? 'platform_capacity' : 'handler_error', message: msg.slice(0, 300) },
+        capacity ? 'platform_capacity' : 'handler_error', metaBase);
+    }
+
+    const status = Number(result && result.status) || 200;
+    const rlMeta = {
+      limit_per_minute: minuteLimit,
+      remaining: rl.minuteRemaining,
+      quota_per_day: dayLimit,
+      day_remaining: rl.dayRemaining,
+    };
+    const outBody: any = {
+      ok: status < 400,
+      status,
       request_id: requestId,
-      api: resolvedApi.slug,
-      endpoint: resolvedEndpoint.slug,
+      api: api.slug,
+      endpoint: endpoint.slug,
       http_method: req.method,
-      response_time_ms: Math.round((performance.now() - startedAt) * 100) / 100,
-      data: result.body,
-      meta: {
-        rate_limit: { limit: minuteLimit, remaining: rl.minuteRemaining, window: 'minute' },
-        daily_quota: { limit: dayLimit, remaining: rl.dayRemaining, window: 'day' },
-      },
-    }, {
-      'X-RateLimit-Limit': String(minuteLimit),
-      'X-RateLimit-Remaining': String(rl.minuteRemaining),
-    }, isSuccess ? null : ((result.body && result.body.error) || 'handler_error'));
+      response_time_ms: elapsed(),
+      data: result && result.body !== undefined ? result.body : result,
+      meta: { rate_limit: status < 400 ? rlMeta : { ...rlMeta, retry_after_seconds: 60 } },
+    };
+    logRow({
+      api_id: api.id, api_slug: api.slug, endpoint_id: endpoint.id, endpoint_path: endpoint.path,
+      method, status_code: status, success: status < 400,
+      error_code: status < 400 ? null : (result && result.body && result.body.error) || 'error',
+    });
+    return json(status, outBody);
   } catch (e) {
-    const capacity = isCapacityError(e);
-    return finish(capacity ? 503 : 500, {
-      ok: false,
-      error: {
-        code: capacity ? 'platform_capacity' : 'gateway_error',
-        message: capacity
-          ? 'Upstream capacity limit reached. Retry shortly.'
-          : String(e && e.message ? e.message : e),
-      },
-      request_id: requestId,
-    }, capacity ? { 'Retry-After': '20' } : {}, capacity ? 'platform_capacity' : 'gateway_error');
+    const msg = String((e as Error).message || e);
+    const capacity = /rate limit|allows \d+ requests|quota/i.test(msg);
+    return finish(capacity ? 503 : 500, { error: capacity ? 'platform_capacity' : 'internal_error', message: msg.slice(0, 300) },
+      capacity ? 'platform_capacity' : 'internal_error');
   }
 });

@@ -1,884 +1,877 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>API Provider Platform</title>
-<meta name="description" content="Developer portal and API management console for the API Provider Platform." />
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>MR RIDUY AI API — AI APIs for the web</title>
+<meta name="description" content="Create AI APIs for your website, app or game. Chat, summarise, translate, sentiment and keyword extraction with a single key."/>
 <style>
-  :root{
-    --bg:#0b0f17; --panel:#121826; --panel-2:#1a2233; --line:#243044;
-    --text:#e8eef8; --muted:#8d9bb3; --brand:#4f8cff; --brand-dim:#2f5cab;
-    --ok:#37d39b; --warn:#f0b34a; --bad:#f2637c; --radius:12px;
-  }
-  *{box-sizing:border-box}
-  html,body{margin:0;padding:0}
-  body{
-    background:var(--bg); color:var(--text);
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
-    font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased;
-  }
-  a{color:var(--brand);text-decoration:none}
-  a:hover{text-decoration:underline}
-  code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-  pre{background:#0d1320;border:1px solid var(--line);border-radius:10px;padding:12px;overflow:auto;font-size:12.5px}
-  code{background:#182034;padding:1px 5px;border-radius:4px;font-size:12.5px}
-  header{position:sticky;top:0;z-index:20;background:rgba(11,15,23,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
-  .wrap{max-width:1180px;margin:0 auto;padding:0 20px}
-  .nav{display:flex;align-items:center;gap:18px;height:60px}
-  .brand{font-weight:700;letter-spacing:-.2px;font-size:15px;display:flex;align-items:center;gap:9px;color:var(--text)}
-  .dot{width:9px;height:9px;border-radius:50%;background:var(--ok);box-shadow:0 0 10px var(--ok)}
-  .nav nav{display:flex;gap:4px;margin-left:12px;flex-wrap:wrap}
-  .nav button{background:none;border:0;color:var(--muted);padding:7px 11px;border-radius:8px;cursor:pointer;font-size:13.5px;font-weight:500}
-  .nav button:hover{background:var(--panel-2);color:var(--text)}
-  .nav button.active{background:var(--panel-2);color:var(--text)}
-  .spacer{flex:1}
-  main{padding:28px 0 70px;min-height:70vh}
-  h1{font-size:25px;letter-spacing:-.4px;margin:0 0 6px}
-  h2{font-size:17px;margin:26px 0 12px;letter-spacing:-.2px}
-  h3{font-size:14.5px;margin:18px 0 8px}
-  p{color:var(--muted);margin:6px 0}
-  .lead{color:var(--muted);font-size:14.5px;max-width:70ch}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
-  .grid{display:grid;gap:14px}
-  .g2{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
-  .g3{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
-  .g4{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
-  .stat .label{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
-  .stat .value{font-size:24px;font-weight:650;margin-top:6px;letter-spacing:-.5px}
-  .stat .sub{font-size:12px;color:var(--muted);margin-top:2px}
-  label{display:block;font-size:12px;color:var(--muted);margin:12px 0 5px}
-  input,select,textarea{width:100%;background:#0d1320;border:1px solid var(--line);color:var(--text);
-    border-radius:8px;padding:9px 11px;font-size:13.5px;font-family:inherit}
-  textarea{min-height:110px;resize:vertical;font-family:ui-monospace,Menlo,monospace;font-size:12.5px}
-  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--brand-dim);box-shadow:0 0 0 3px rgba(79,140,255,.12)}
-  .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;background:var(--brand);color:#fff;
-    border:0;border-radius:8px;padding:9px 15px;font-size:13.5px;font-weight:600;cursor:pointer;font-family:inherit}
-  .btn:hover{background:#3d7bf0}
-  .btn:disabled{opacity:.55;cursor:not-allowed}
-  .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
-  .btn.ghost:hover{background:var(--panel-2)}
-  .btn.danger{background:transparent;border:1px solid #4b2333;color:var(--bad)}
-  .btn.danger:hover{background:#2a1520}
-  .btn.sm{padding:5px 10px;font-size:12.5px}
-  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-  table{width:100%;border-collapse:collapse;font-size:13px}
-  th{text-align:left;font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);
-    font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
-  td{padding:9px 10px;border-bottom:1px solid #1b2434;vertical-align:top}
-  tr:last-child td{border-bottom:0}
-  tbody tr:hover{background:#141c2b}
-  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;letter-spacing:.02em}
-  .pill.ok{background:rgba(55,211,155,.14);color:var(--ok)}
-  .pill.bad{background:rgba(242,99,124,.14);color:var(--bad)}
-  .pill.warn{background:rgba(240,179,74,.14);color:var(--warn)}
-  .pill.muted{background:#1b2434;color:var(--muted)}
-  .method{font-weight:700;font-size:11px;letter-spacing:.05em}
-  .m-GET{color:var(--ok)} .m-POST{color:var(--brand)} .m-PUT{color:var(--warn)} .m-DELETE{color:var(--bad)} .m-PATCH{color:#b28bff}
-  .empty{color:var(--muted);text-align:center;padding:30px 10px;font-size:13.5px}
-  .toast{position:fixed;right:18px;bottom:18px;z-index:100;display:flex;flex-direction:column;gap:8px}
-  .toast div{background:var(--panel-2);border:1px solid var(--line);border-left:3px solid var(--brand);
-    padding:11px 14px;border-radius:8px;font-size:13px;max-width:360px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
-  .toast div.err{border-left-color:var(--bad)}
-  .toast div.ok{border-left-color:var(--ok)}
-  .modal{position:fixed;inset:0;background:rgba(4,7,12,.75);display:flex;align-items:center;justify-content:center;z-index:90;padding:20px}
-  .modal .card{max-width:560px;width:100%}
-  .secret{background:#0d1320;border:1px dashed var(--brand-dim);border-radius:8px;padding:12px;
-    word-break:break-all;font-size:13px;color:#cfe0ff}
-  .bar{height:7px;background:#1b2434;border-radius:4px;overflow:hidden;min-width:60px}
-  .bar > i{display:block;height:100%;background:var(--brand)}
-  .kv{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid #1b2434;font-size:13px}
-  .kv:last-child{border-bottom:0}
-  .kv span:first-child{color:var(--muted)}
-  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:16px;flex-wrap:wrap}
-  .tabs button{background:none;border:0;border-bottom:2px solid transparent;color:var(--muted);
-    padding:9px 13px;cursor:pointer;font-size:13.5px;font-weight:500}
-  .tabs button.active{color:var(--text);border-bottom-color:var(--brand)}
-  .auth-wrap{max-width:400px;margin:40px auto}
-  .hint{font-size:12px;color:var(--muted);margin-top:5px}
-  .section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:26px 0 12px}
-  .section-head h2{margin:0}
-  details{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:10px 0;background:var(--panel)}
-  summary{cursor:pointer;font-weight:600;font-size:13.5px;list-style:none;display:flex;gap:10px;align-items:center}
-  summary::-webkit-details-marker{display:none}
-  summary::before{content:"+";color:var(--muted);font-weight:700}
-  details[open] summary::before{content:"−"}
-  .endpoint-meta{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0 10px;font-size:12.5px;color:var(--muted)}
-  .footer{border-top:1px solid var(--line);padding:20px 0;color:var(--muted);font-size:12.5px}
-  .warnbox{background:rgba(240,179,74,.08);border:1px solid rgba(240,179,74,.3);border-radius:10px;padding:12px 14px;font-size:13px;margin:12px 0}
-  @media(max-width:640px){ .nav{height:auto;padding:10px 0;flex-wrap:wrap} .nav nav{margin-left:0} main{padding:20px 0 50px} }
+:root{
+  --blue:#1a73e8; --blue-d:#1765cc; --blue-l:#e8f0fe;
+  --text:#202124; --muted:#5f6368; --border:#dadce0; --bg:#fff; --bg2:#f8f9fa;
+  --green:#188038; --red:#d93025; --amber:#f9ab00;
+  --shadow:0 1px 2px rgba(60,64,67,.3),0 1px 3px 1px rgba(60,64,67,.15);
+  --shadow-lg:0 4px 6px rgba(60,64,67,.15),0 8px 24px rgba(60,64,67,.15);
+  --radius:8px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--text);
+  font-family:'Google Sans',Roboto,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;
+  font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased;
+}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{margin:0;font-weight:400;letter-spacing:-.2px}
+h1{font-size:44px;line-height:1.15;letter-spacing:-1px}
+h2{font-size:22px}
+h3{font-size:16px;font-weight:500}
+p{margin:0}
+/* ---------- header ---------- */
+header{position:sticky;top:0;z-index:40;background:#fff;border-bottom:1px solid var(--border)}
+.hdr{max-width:1280px;margin:0 auto;height:64px;display:flex;align-items:center;gap:8px;padding:0 24px}
+.brand{display:flex;align-items:center;gap:10px;font-size:20px;color:var(--text);letter-spacing:-.4px;cursor:pointer;font-weight:500}
+.dots{display:inline-grid;grid-template-columns:8px 8px;gap:2px;transform:rotate(0)}
+.dots i{width:8px;height:8px;border-radius:50%;display:block}
+nav{display:flex;align-items:center;gap:2px;margin-left:24px;flex:1;overflow-x:auto;scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+nav button{
+  background:none;border:0;font:inherit;font-size:14px;color:var(--muted);cursor:pointer;
+  padding:10px 12px;border-radius:4px;white-space:nowrap;position:relative;
+}
+nav button:hover{background:var(--bg2);color:var(--text)}
+nav button.on{color:var(--blue);font-weight:500}
+nav button.on:after{content:"";position:absolute;left:12px;right:12px;bottom:0;height:3px;background:var(--blue);border-radius:3px 3px 0 0}
+.who{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted);white-space:nowrap}
+.pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;background:var(--blue-l);color:var(--blue-d);letter-spacing:.2px}
+.pill.admin{background:#fef7e0;color:#b06000}
+/* ---------- layout ---------- */
+main{max-width:1280px;margin:0 auto;padding:0 24px 80px}
+.hero{text-align:center;padding:88px 0 56px}
+.hero p.sub{margin:18px auto 0;max-width:660px;font-size:18px;color:var(--muted);line-height:1.55}
+.searchwrap{margin:36px auto 0;max-width:620px;position:relative}
+.searchwrap svg{position:absolute;left:20px;top:50%;transform:translateY(-50%);fill:#9aa0a6}
+.searchwrap input{
+  width:100%;height:52px;border:1px solid var(--border);border-radius:26px;padding:0 20px 0 52px;
+  font:inherit;font-size:16px;outline:none;background:#fff;transition:box-shadow .15s,border-color .15s;
+}
+.searchwrap input:hover{box-shadow:var(--shadow)}
+.searchwrap input:focus{border-color:transparent;box-shadow:var(--shadow-lg)}
+.chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:22px 0 0}
+.chip{border:1px solid var(--border);background:#fff;border-radius:20px;padding:7px 14px;font:inherit;font-size:13px;color:var(--muted);cursor:pointer}
+.chip:hover{background:var(--bg2)}
+.chip.on{background:var(--blue-l);border-color:var(--blue-l);color:var(--blue-d);font-weight:500}
+.section{margin:40px 0}
+.section-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px}
+.section-head .title{font-size:20px;font-weight:500;letter-spacing:-.3px}
+.section-head .meta{font-size:13px;color:var(--muted);margin-top:4px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+.card{border:1px solid var(--border);border-radius:12px;padding:20px;background:#fff;display:flex;flex-direction:column;gap:10px;transition:box-shadow .15s,border-color .15s}
+.card:hover{box-shadow:var(--shadow)}
+.card .top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.card h3{font-size:17px;font-weight:500;color:var(--text);letter-spacing:-.2px}
+.card .desc{color:var(--muted);font-size:13px;line-height:1.55;flex:1}
+.card .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tag{font-size:11px;color:var(--muted);background:var(--bg2);border-radius:4px;padding:3px 8px}
+.mono{font-family:'Roboto Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--muted)}
+.actions{display:flex;gap:8px;margin-top:4px}
+/* ---------- buttons ---------- */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;height:36px;padding:0 16px;
+  border-radius:4px;border:1px solid transparent;background:var(--blue);color:#fff;font:inherit;font-size:14px;
+  font-weight:500;cursor:pointer;letter-spacing:.2px;white-space:nowrap;
+}
+.btn:hover{background:var(--blue-d);box-shadow:var(--shadow)}
+.btn:disabled{opacity:.55;cursor:default;box-shadow:none}
+.btn.ghost{background:none;color:var(--blue);border-color:var(--border)}
+.btn.ghost:hover{background:var(--blue-l);border-color:var(--blue-l);box-shadow:none}
+.btn.grey{background:#fff;color:var(--text);border-color:var(--border)}
+.btn.grey:hover{background:var(--bg2);box-shadow:none}
+.btn.danger{background:none;color:var(--red);border-color:var(--border)}
+.btn.danger:hover{background:#fce8e6;border-color:#fce8e6;box-shadow:none}
+.btn.sm{height:30px;padding:0 12px;font-size:13px}
+/* ---------- forms ---------- */
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
+.field label{font-size:12px;color:var(--muted);font-weight:500}
+.field input,.field select,.field textarea{
+  border:1px solid var(--border);border-radius:4px;padding:10px 12px;font:inherit;font-size:14px;
+  outline:none;background:#fff;color:var(--text);width:100%;
+}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue)}
+.field textarea{font-family:'Roboto Mono',ui-monospace,Menlo,monospace;font-size:13px;resize:vertical;min-height:120px}
+.hint{font-size:12px;color:var(--muted)}
+/* ---------- panels / tables ---------- */
+.panel{border:1px solid var(--border);border-radius:12px;background:#fff;overflow:hidden}
+.panel .ph{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px}
+.panel .pb{padding:20px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);font-weight:500;padding:12px 20px;border-bottom:1px solid var(--border);background:var(--bg2)}
+td{padding:14px 20px;border-bottom:1px solid #f1f3f4;vertical-align:middle}
+tr:last-child td{border-bottom:0}
+tbody tr:hover{background:#fafafa}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px}
+.stat{border:1px solid var(--border);border-radius:12px;padding:18px 20px;background:#fff}
+.stat .k{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px}
+.stat .v{font-size:28px;margin-top:6px;letter-spacing:-.5px}
+.bar{height:8px;border-radius:4px;background:var(--bg2);overflow:hidden;min-width:60px}
+.bar i{display:block;height:100%;background:var(--blue);border-radius:4px}
+.center{text-align:center}
+.empty{padding:48px 20px;text-align:center;color:var(--muted)}
+.ok{color:var(--green);font-weight:500}
+.bad{color:var(--red);font-weight:500}
+pre.code{background:#202124;color:#e8eaed;border-radius:8px;padding:16px;overflow:auto;font-family:'Roboto Mono',ui-monospace,Menlo,monospace;font-size:12.5px;line-height:1.6;margin:0}
+pre.code.sm{font-size:12px}
+.grid2{display:grid;grid-template-columns:280px 1fr;gap:24px;align-items:start}
+.sidelist{border:1px solid var(--border);border-radius:12px;overflow:hidden;position:sticky;top:88px}
+.sidelist button{display:block;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid #f1f3f4;padding:12px 16px;font:inherit;font-size:13px;color:var(--muted);cursor:pointer}
+.sidelist button:hover{background:var(--bg2)}
+.sidelist button.on{background:var(--blue-l);color:var(--blue-d);font-weight:500}
+.doc-ep{border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:14px;background:#fff}
+.method{font-family:'Roboto Mono',monospace;font-size:11px;font-weight:700;letter-spacing:.4px;padding:2px 7px;border-radius:4px;background:var(--blue-l);color:var(--blue-d)}
+.method.post{background:#e6f4ea;color:#137333}
+/* ---------- modal / toast ---------- */
+.scrim{position:fixed;inset:0;background:rgba(32,33,36,.5);display:flex;align-items:center;justify-content:center;padding:24px;z-index:60}
+.modal{background:#fff;border-radius:16px;box-shadow:var(--shadow-lg);width:100%;max-width:600px;max-height:88vh;overflow:auto}
+.modal .mh{padding:20px 24px;border-bottom:1px solid var(--border);font-size:18px}
+.modal .mb{padding:24px}
+.modal .mf{padding:16px 24px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
+.keybox{border:1px dashed var(--blue);background:var(--blue-l);border-radius:8px;padding:14px;font-family:'Roboto Mono',monospace;font-size:13px;word-break:break-all;color:var(--blue-d)}
+.brandkey{font-size:12px;color:var(--muted);margin-bottom:6px;letter-spacing:.6px;text-transform:uppercase;font-weight:500}
+#toast{position:fixed;left:24px;bottom:24px;background:#323232;color:#fff;padding:12px 18px;border-radius:6px;font-size:13px;box-shadow:var(--shadow-lg);opacity:0;transform:translateY(8px);transition:.2s;pointer-events:none;z-index:80;max-width:380px}
+#toast.show{opacity:1;transform:none}
+footer{border-top:1px solid var(--border);padding:28px 24px;color:var(--muted);font-size:13px}
+footer .in{max-width:1280px;margin:0 auto;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+@media(max-width:900px){.grid2{grid-template-columns:1fr}.sidelist{position:static}h1{font-size:32px}.hero{padding:56px 0 40px}}
 </style>
 </head>
 <body>
 <header>
-  <div class="wrap nav">
-    <div class="brand"><span class="dot"></span> API Provider Platform</div>
+  <div class="hdr">
+    <div class="brand" onclick="go('catalog')">
+      <span class="dots"><i style="background:#4285f4"></i><i style="background:#ea4335"></i><i style="background:#fbbc05"></i><i style="background:#34a853"></i></span>
+      <span>MR RIDUY <span style="color:var(--muted);font-weight:400">AI API</span></span>
+    </div>
     <nav id="nav"></nav>
-    <div class="spacer"></div>
-    <div id="who" class="row" style="gap:8px"></div>
+    <div class="who" id="who"></div>
   </div>
 </header>
-<main><div class="wrap" id="app"></div></main>
-<footer class="footer"><div class="wrap">
-  API Provider Platform · Phase 1 · gateway, keys, quotas, usage analytics, docs and playground.
-  <span id="hostline"></span>
-</div></footer>
-<div class="toast" id="toast"></div>
-<div id="modalRoot"></div>
+<main id="app"></main>
+<footer><div class="in"><span>MR RIDUY AI API · AI APIs for websites, apps and games</span><span id="footright">Gateway: /functions/apiGateway</span></div></footer>
+<div id="modals"></div>
+<div id="toast"></div>
 
 <script>
-/* ------------------------------------------------------------------ config */
 const BASE = "https://superagent-b31b88fd.base44.app/functions";
-const TOKEN_KEY = "app_platform_token";
-const state = { token: localStorage.getItem(TOKEN_KEY) || "", dev: null, view: "catalog", cache: {} };
+const TOKEN_KEY = "mr_riduy_token";
+const state = {
+  view: "catalog", token: localStorage.getItem(TOKEN_KEY) || "", dev: null,
+  catalog: null, docs: null, docSlug: null, authTab: "login",
+  filter: "", catFilter: "", keys: [], overview: null,
+  pgApi: "", pgEp: "", pgBody: "{\n  \"message\": \"Hello from my website\"\n}", pgKeyId: "", pgResult: null,
+  usage: null, history: null, adminApis: [], adminCats: [], adminEps: [], adminSlug: "",
+  keyModal: null, busy: false
+};
 
-/* ------------------------------------------------------------------ helpers */
 const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s === null || s === undefined ? "" : s)
-  .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-const num = (n) => (n === null || n === undefined || isNaN(n)) ? "0" : Number(n).toLocaleString();
-const pct = (n) => (Number(n) || 0).toFixed(2) + "%";
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const pick = (o, ...ks) => { for (const k of ks) { if (o && o[k] !== undefined && o[k] !== null) return o[k]; } return undefined; };
+const num = (v, d = 0) => (typeof v === "number" ? v : (Number(v) || d));
+const pct = (v) => (v === undefined || v === null ? "—" : (Number(v) <= 1 ? (Number(v) * 100).toFixed(1) : Number(v).toFixed(1)) + "%");
 
-function toast(msg, kind){
-  const el = document.createElement("div");
-  el.className = kind || "";
-  el.textContent = msg;
-  $("toast").appendChild(el);
-  setTimeout(() => el.remove(), 4600);
+function toast(msg, kind) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.style.background = kind === "bad" ? "#d93025" : (kind === "ok" ? "#188038" : "#323232");
+  t.classList.add("show");
+  clearTimeout(t._h);
+  t._h = setTimeout(() => t.classList.remove("show"), 3600);
 }
 
-async function call(fn, payload, opts){
-  opts = opts || {};
-  const headers = { "Content-Type": "application/json" };
-  if (state.token) headers["X-Developer-Token"] = state.token;
-  let res, body;
-  try{
-    res = await fetch(BASE + "/" + fn, {
-      method: "POST", headers, body: JSON.stringify(payload || {}),
-    });
-    body = await res.json();
-  }catch(e){
-    throw new Error("Network error contacting " + fn + ": " + e.message);
+async function call(fn, payload = {}, extraHeaders = {}) {
+  const headers = { "Content-Type": "application/json", ...extraHeaders };
+  if (state.token && !headers["X-Developer-Token"]) headers["X-Developer-Token"] = state.token;
+  let res, body = {};
+  try {
+    res = await fetch(BASE + "/" + fn, { method: "POST", headers, body: JSON.stringify(payload) });
+    const text = await res.text();
+    try { body = text ? JSON.parse(text) : {}; } catch (_) { body = { raw: text }; }
+  } catch (e) {
+    return { status: 0, body: { ok: false, error: { code: "network", message: "Network error: " + e.message } } };
   }
-  if (!body || body.ok === false){
-    const err = (body && body.error) || {};
-    const e = new Error(err.message || ("Request failed (" + res.status + ")"));
-    e.code = err.code; e.status = res.status;
-    throw e;
-  }
-  return body.data;
+  return { status: res.status, body };
 }
 
-/* ------------------------------------------------------------------ session */
-async function loadSession(){
-  if (!state.token) { state.dev = null; return; }
-  try{
-    const d = await call("devSession", { action: "me" });
-    state.dev = d.developer; state.overview = d.overview; state.session = d.session;
-  }catch(e){
-    if (["invalid_token","token_expired","token_revoked","missing_token","profile_missing"].includes(e.code)){
-      state.token = ""; localStorage.removeItem(TOKEN_KEY); state.dev = null;
-    } else { toast(e.message, "err"); }
-  }
-}
-
-/* ------------------------------------------------------------------ shell */
+/* ---------------- navigation ---------------- */
 const NAV = [
-  ["catalog","API Catalog"], ["docs","Documentation"], ["playground","Playground"],
-  ["dashboard","Dashboard"], ["usage","Usage"], ["history","Requests"], ["admin","Admin"],
+  ["catalog", "API Catalog"], ["docs", "Documentation"], ["playground", "Playground"],
+  ["dashboard", "Console"], ["usage", "Usage"], ["requests", "Requests"]
 ];
 
-function renderNav(){
-  const items = NAV.filter(([id]) => {
-    if (["dashboard","usage","history"].includes(id)) return !!state.dev;
-    if (id === "admin") return state.dev && state.dev.role === "admin";
-    if (id === "playground") return true;
-    return true;
-  });
-  $("nav").innerHTML = items.map(([id,label]) =>
-    `<button class="${state.view===id?"active":""}" onclick="go('${id}')">${label}</button>`).join("");
-  $("who").innerHTML = state.dev
-    ? `<span class="pill muted">${esc(state.dev.email)}</span>
-       <span class="pill ${state.dev.role==="admin"?"warn":"ok"}">${esc(state.dev.role)}</span>
-       <button class="btn ghost sm" onclick="logout()">Sign out</button>`
-    : `<button class="btn sm" onclick="openAuth('login')">Sign in</button>`;
-  $("hostline").innerHTML = state.dev ? "" : " · <a href='#' onclick='openAuth(\"register\");return false'>Create a free developer account</a>";
+function renderNav() {
+  const items = NAV.slice();
+  if (state.dev && state.dev.role === "admin") items.push(["admin", "Admin"]);
+  $("nav").innerHTML = items.map(([id, label]) =>
+    `<button class="${state.view === id ? "on" : ""}" onclick="go('${id}')">${label}</button>`).join("");
+
+  if (state.dev) {
+    $("who").innerHTML = `<span>${esc(state.dev.email)}</span>
+      <span class="pill ${state.dev.role === "admin" ? "admin" : ""}">${esc(state.dev.role)}</span>
+      <button class="btn grey sm" onclick="logout()">Sign out</button>`;
+  } else {
+    $("who").innerHTML = `<button class="btn ghost sm" onclick="openAuth('login')">Sign in</button>
+      <button class="btn sm" onclick="openAuth('register')">Get API key</button>`;
+  }
 }
 
-function go(view){
+function go(view) {
   state.view = view;
+  render();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function openAuth(tab) { state.authTab = tab; go("auth"); }
+
+async function boot() {
+  renderNav();
+  if (state.token) {
+    const { status, body } = await call("devSession", { action: "me" });
+    if (status === 200) { state.dev = body.data.developer; state.overview = body.data.overview; }
+    else { state.token = ""; localStorage.removeItem(TOKEN_KEY); state.dev = null; }
+  }
+  renderNav();
+  go(state.view);
+}
+
+function render() {
   renderNav();
   const app = $("app");
-  app.innerHTML = `<div class="empty">Loading…</div>`;
-  ({ catalog: viewCatalog, docs: viewDocs, auth: viewAuth, dashboard: viewDashboard,
-     usage: viewUsage, history: viewHistory, admin: viewAdmin, playground: viewPlayground }[view] || viewCatalog)();
+  const v = {
+    catalog: viewCatalog, docs: viewDocs, playground: viewPlayground, auth: viewAuth,
+    dashboard: viewDashboard, usage: viewUsage, requests: viewRequests, admin: viewAdmin
+  }[state.view] || viewCatalog;
+  app.innerHTML = v();
+  if (state.view === "catalog") bindCatalog();
 }
 
-function openAuth(tab){
-  state.authTab = tab || "login";
-  go("auth");
-}
-
-async function logout(){
-  try{ await call("devSession", { action: "logout" }); }catch(e){}
-  state.token = ""; localStorage.removeItem(TOKEN_KEY); state.dev = null;
-  state.authTab = "login"; toast("Signed out", "ok"); go("catalog");
-}
-
-/* ------------------------------------------------------------------ catalog */
-async function viewCatalog(){
-  try{
-    const d = await call("publicCatalog", {});
-    state.cache.catalog = d;
-    const apis = d.apis || [];
-    $("app").innerHTML = `
-      <h1>Public API catalog</h1>
-      <p class="lead">${num(d.totals.apis)} published APIs · ${num(d.totals.endpoints)} endpoints · ${num(d.totals.categories)} categories.
-      Every endpoint below is live and returns real computed data.</p>
-      ${apis.length ? `<div class="grid g2" style="margin-top:20px">${apis.map(a => `
-        <div class="card">
-          <div class="row" style="justify-content:space-between">
-            <strong>${esc(a.name)}</strong>
-            <span class="pill muted">${esc(a.version || "v1")}</span>
-          </div>
-          <p style="margin:8px 0 12px">${esc(a.description)}</p>
-          <div class="row" style="gap:6px;margin-bottom:12px">
-            <span class="pill muted">${esc(a.category_slug || "uncategorised")}</span>
-            <span class="pill muted">${num(a.endpoint_count)} endpoints</span>
-            ${a.auth_required ? '<span class="pill warn">API key</span>' : '<span class="pill ok">open</span>'}
-          </div>
-          <div class="mono" style="font-size:12px;color:var(--muted);margin-bottom:12px">${esc(a.base_path)}</div>
-          <div class="row">
-            <button class="btn sm" onclick="openDocs('${esc(a.slug)}')">View docs</button>
-            <button class="btn ghost sm" onclick="openPlayground('${esc(a.slug)}')">Try it</button>
-          </div>
-        </div>`).join("")}</div>`
-      : `<div class="card empty">No APIs published yet.</div>`}`;
-  }catch(e){
-    $("app").innerHTML = `<div class="card empty">Could not load catalog: ${esc(e.message)}</div>`;
-  }
-}
-
-function openDocs(slug){ state.docSlug = slug; go("docs"); }
-function openPlayground(slug){ state.pgApi = slug; go("playground"); }
-
-/* ------------------------------------------------------------------ docs */
-async function viewDocs(){
-  const cat = state.cache.catalog || await call("publicCatalog", {});
-  state.cache.catalog = cat;
-  const slug = state.docSlug || (cat.apis[0] && cat.apis[0].slug);
-  if (!slug){ $("app").innerHTML = `<div class="card empty">No published APIs yet.</div>`; return; }
-  state.docSlug = slug;
-  let d;
-  try{ d = await call("apiDocs", { api_slug: slug }); }
-  catch(e){ $("app").innerHTML = `<div class="card empty">${esc(e.message)}</div>`; return; }
-  const a = d.api;
-  $("app").innerHTML = `
-    <div class="row" style="justify-content:space-between;align-items:flex-start">
-      <div>
-        <h1>${esc(a.name)}</h1>
-        <p class="lead">${esc(a.description)}</p>
+/* ---------------- catalog ---------------- */
+function viewCatalog() {
+  const cat = state.catalog;
+  if (!cat) { loadCatalog(); return `<div class="empty">Loading catalog…</div>`; }
+  const totals = cat.totals || {};
+  const apis = (cat.apis || []).filter((a) => {
+    const q = state.filter.toLowerCase();
+    const okQ = !q || (a.name + " " + a.description + " " + a.slug).toLowerCase().includes(q);
+    const okC = !state.catFilter || a.category_slug === state.catFilter || a.category === state.catFilter;
+    return okQ && okC;
+  });
+  const cards = apis.map((a) => {
+    const isAI = /ai/i.test(a.slug) || !!a.is_ai;
+    return `<div class="card">
+      <div class="top"><h3>${esc(a.name)}</h3><span class="tag">${esc(a.version || "v1")}</span></div>
+      <div class="desc">${esc(a.description || "")}</div>
+      <div class="row">
+        <span class="tag">${esc(a.category_slug || a.category || "general")}</span>
+        <span class="tag">${num(pick(a, "endpoint_count", "endpoints_total", "endpoints") || (a.endpoints && a.endpoints.length))} endpoints</span>
+        ${isAI ? `<span class="pill">AI</span>` : ``}
       </div>
-      <select style="max-width:230px" onchange="state.docSlug=this.value;go('docs')">
-        ${cat.apis.map(x => `<option value="${esc(x.slug)}" ${x.slug===slug?"selected":""}>${esc(x.name)}</option>`).join("")}
-      </select>
-    </div>
-
-    <div class="grid g3" style="margin-top:18px">
-      <div class="card stat"><div class="label">Version</div><div class="value">${esc(a.version)}</div></div>
-      <div class="card stat"><div class="label">Rate limit</div><div class="value">${num(a.default_rate_limit_per_minute)}<span style="font-size:12px;color:var(--muted)">/min</span></div></div>
-      <div class="card stat"><div class="label">Daily quota</div><div class="value">${num(a.default_daily_quota)}</div></div>
-    </div>
-
-    <h2>Authentication</h2>
-    <div class="card">
-      <p>${d.authentication.type === "none" ? "This API is open and requires no key." :
-        "Send your secret key in the <code>X-Api-Key</code> header. Keys are shown once at creation time and stored only as a SHA-256 hash."}</p>
-      <h3>Gateway URL</h3>
-      <pre>${esc(d.authentication.gateway_url)}</pre>
-      <h3>Example request</h3>
-      <pre>curl -X POST '${esc(d.authentication.gateway_url)}' \\
-  -H 'X-Api-Key: $API_KEY' \\
-  -H 'Content-Type: application/json' \\
-  -d '{"api":"${esc(a.slug)}","endpoint":"${esc((d.endpoints[0]||{}).slug||"")}","body":{}}'</pre>
-    </div>
-
-    <h2>Endpoints <span class="pill muted">${d.endpoints.length}</span></h2>
-    ${d.endpoints.map(ep => `
-      <details>
-        <summary><span class="method m-${esc(ep.method)}">${esc(ep.method)}</span>
-          <code style="background:none;padding:0">${esc(ep.path)}</code>
-          <span class="pill muted" style="margin-left:auto">${esc(ep.name)}</span></summary>
-        <p style="margin-top:12px">${esc(ep.summary || ep.description || "")}</p>
-        ${ep.parameters && ep.parameters.length ? `
-          <h3>Parameters</h3>
-          <table><thead><tr><th>Name</th><th>In</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
-          <tbody>${ep.parameters.map(p => `<tr><td class="mono">${esc(p.name)}</td><td>${esc(p.in||"body")}</td>
-            <td>${esc(p.type||"string")}</td><td>${p.required?"yes":"no"}</td><td>${esc(p.description||"")}</td></tr>`).join("")}</tbody></table>` : ""}
-        ${ep.request_body_example && Object.keys(ep.request_body_example).length ? `
-          <h3>Example body</h3><pre>${esc(JSON.stringify(ep.request_body_example,null,2))}</pre>` : ""}
-        ${ep.response_examples && ep.response_examples.length ? ep.response_examples.map(r => `
-          <h3>Response ${esc(r.status)}${r.description?" — "+esc(r.description):""}</h3>
-          <pre>${esc(JSON.stringify(r.body,null,2))}</pre>`).join("") : ""}
-        <div class="row" style="margin-top:12px">
-          <button class="btn sm" onclick="openPlayground('${esc(a.slug)}','${esc(ep.slug)}')">Open in playground</button>
-        </div>
-      </details>`).join("")}`;
-}
-
-/* ------------------------------------------------------------------ auth */
-function viewAuth(){
-  $("app").innerHTML = `
-    <div class="auth-wrap">
-      <div class="card">
-        <div class="tabs">
-          <button class="${state.authTab!=="register"?"active":""}" onclick="openAuth('login')">Sign in</button>
-          <button class="${state.authTab==="register"?"active":""}" onclick="openAuth('register')">Create account</button>
-        </div>
-        <div id="authForm"></div>
+      <div class="mono">${esc(a.base_path || "")}</div>
+      <div class="actions">
+        <button class="btn ghost sm" onclick="openDoc('${esc(a.slug)}')">Docs</button>
+        <button class="btn grey sm" onclick="tryApi('${esc(a.slug)}')">Try it</button>
       </div>
     </div>`;
-  renderAuthForm();
-}
+  }).join("");
 
-function renderAuthForm(){
-  const reg = state.authTab === "register";
-  $("authForm").innerHTML = `
-    ${reg ? `<label>Full name</label><input id="a_name" placeholder="Ada Lovelace" autocomplete="name">` : ""}
-    <label>Email</label><input id="a_email" type="email" placeholder="you@company.com" autocomplete="email">
-    <label>Password</label><input id="a_pass" type="password" placeholder="At least 8 characters" autocomplete="${reg?"new-password":"current-password"}">
-    ${reg ? `<label>Company <span style="opacity:.6">(optional)</span></label><input id="a_company" placeholder="Acme Inc">` : ""}
-    <div style="margin-top:16px"><button class="btn" style="width:100%" id="a_btn" onclick="submitAuth()">
-      ${reg ? "Create account" : "Sign in"}</button></div>
-    <p class="hint">${reg ? "You get 60 requests/minute and 10,000 requests/day on the free plan."
-      : "Sessions last 7 days. Passwords are hashed with PBKDF2-SHA256."}</p>`;
-}
-
-async function submitAuth(){
-  const reg = state.authTab === "register";
-  const email = $("a_email").value.trim(), password = $("a_pass").value;
-  const btn = $("a_btn"); btn.disabled = true;
-  try{
-    const d = await call(reg ? "devRegister" : "devLogin", {
-      email, password,
-      full_name: reg ? ($("a_name").value.trim()) : undefined,
-      company: reg ? ($("a_company").value.trim()) : undefined,
-    });
-    state.token = d.token; localStorage.setItem(TOKEN_KEY, d.token);
-    state.dev = d.developer;
-    state.authTab = "login";
-    toast(reg ? "Account created" : "Signed in", "ok");
-    go("dashboard");
-  }catch(e){
-    toast(e.message, "err");
-  }finally{ btn.disabled = false; }
-}
-
-/* ------------------------------------------------------------------ dashboard */
-async function viewDashboard(){
-  if (!state.dev){ return viewAuth(); }
-  let keys = [], me;
-  try{
-    me = await call("devSession", { action: "me" });
-    state.dev = me.developer; state.overview = me.overview;
-    keys = (await call("keyManage", { action: "list" })).keys || [];
-  }catch(e){
-    $("app").innerHTML = `<div class="card empty">${esc(e.message)}</div>`; return;
-  }
-  const o = me.overview;
-  $("app").innerHTML = `
-    <h1>Welcome back, ${esc((state.dev.full_name||state.dev.email).split(" ")[0])}</h1>
-    <p class="lead">${esc(state.dev.plan)} plan · ${num(state.dev.rate_limit_per_minute)} requests/min ·
-      ${num(state.dev.daily_quota)} requests/day</p>
-
-    <div class="grid g4" style="margin-top:18px">
-      <div class="card stat"><div class="label">Active keys</div><div class="value">${num(o.active_keys)}</div><div class="sub">of ${num(o.total_keys)} total</div></div>
-      <div class="card stat"><div class="label">Requests today</div><div class="value">${num(o.requests_today_scanned)}</div><div class="sub">from recent traffic</div></div>
-      <div class="card stat"><div class="label">Successful</div><div class="value" style="color:var(--ok)">${num(o.success_today_scanned)}</div><div class="sub">2xx/3xx</div></div>
-      <div class="card stat"><div class="label">Failed</div><div class="value" style="color:var(--bad)">${num(o.failed_today_scanned)}</div><div class="sub">4xx/5xx</div></div>
+  return `
+  <section class="hero">
+    <h1>AI APIs for your website, app or game</h1>
+    <p class="sub">Generate a key in seconds and call chat, summarise, translate, sentiment and keyword endpoints from any stack. Every response you see here is produced live.</p>
+    <div class="searchwrap">
+      <svg width="20" height="20" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+      <input id="q" placeholder="Search APIs — chat, translate, sentiment…" value="${esc(state.filter)}"/>
     </div>
-
+    <div class="chips">
+      <button class="chip ${!state.catFilter ? "on" : ""}" onclick="setCat('')">All</button>
+      ${(cat.categories || []).map((c) => `<button class="chip ${state.catFilter === c.slug ? "on" : ""}" onclick="setCat('${esc(c.slug)}')">${esc(c.name)}</button>`).join("")}
+    </div>
+  </section>
+  <section class="section">
     <div class="section-head">
-      <h2>API keys</h2>
-      <button class="btn" onclick="createKeyPrompt()">Generate new key</button>
+      <div><div class="title">Published APIs</div>
+      <div class="meta">${num(totals.apis, apis.length)} APIs · ${num(totals.endpoints)} endpoints · ${num(totals.categories)} categories</div></div>
+      <button class="btn ghost sm" onclick="loadCatalog()">Refresh</button>
     </div>
-    <div class="card" style="padding:0;overflow:hidden">
-      ${keys.length ? `<table><thead><tr><th>Name</th><th>Key</th><th>Status</th><th>Keys used</th><th>Rate limit</th><th>Created</th><th></th></tr></thead>
-      <tbody>${keys.map(k => `<tr>
-        <td><strong>${esc(k.name)}</strong></td>
-        <td class="mono" style="font-size:12px">${esc(k.masked_key)}</td>
-        <td><span class="pill ${k.status==="active"?"ok":"bad"}">${esc(k.status)}</span></td>
-        <td>${num(k.request_count)}</td>
-        <td>${num(k.rate_limit_per_minute)}/min</td>
-        <td style="color:var(--muted);font-size:12px">${esc((k.created_date||"").slice(0,10))}</td>
-        <td style="white-space:nowrap">
-          ${k.status==="active" ? `
-            <button class="btn ghost sm" onclick="regenKey('${esc(k.id)}')">Rotate</button>
-            <button class="btn danger sm" onclick="revokeKey('${esc(k.id)}')">Revoke</button>` : `<span class="pill muted">revoked</span>`}
-        </td></tr>`).join("")}</tbody></table>`
-      : `<div class="empty">No API keys yet. Generate one to start calling the gateway.</div>`}
-    </div>
-    <div class="warnbox">Keys are stored as SHA-256 hashes only. The full secret is displayed once at creation or rotation and cannot be recovered.</div>
-
-    <h2>Profile</h2>
-    <div class="card">
-      <div class="kv"><span>Email</span><span>${esc(state.dev.email)}</span></div>
-      <div class="kv"><span>Plan</span><span>${esc(state.dev.plan)}</span></div>
-      <div class="kv"><span>Role</span><span>${esc(state.dev.role)}</span></div>
-      <div class="kv"><span>Last login</span><span>${esc(state.dev.last_login_at || "—")}</span></div>
-      <div class="kv"><span>Session expires</span><span>${esc((me.session||{}).expires_at || "—")}</span></div>
-    </div>`;
+    <div class="cards">${cards || `<div class="empty">No API matches that search.</div>`}</div>
+  </section>`;
 }
 
-function createKeyPrompt(){
-  showModal(`<h2 style="margin-top:0">Generate API key</h2>
-    <label>Key name</label><input id="k_name" placeholder="Production server">
-    <label>Restrict to APIs <span style="opacity:.6">(optional, comma separated slugs)</span></label>
-    <input id="k_scope" placeholder="system, crypto">
-    <label>Rate limit override (requests/min)</label>
-    <input id="k_rate" type="number" min="1" value="${state.dev.rate_limit_per_minute||60}">
-    <div class="row" style="margin-top:18px;justify-content:flex-end">
-      <button class="btn ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn" id="k_go" onclick="doCreateKey()">Generate</button>
-    </div>`);
+function bindCatalog() {
+  const q = $("q");
+  if (q) q.addEventListener("input", (e) => {
+    state.filter = e.target.value;
+    const pos = e.target.selectionStart;
+    render();
+    const nq = $("q"); if (nq) { nq.focus(); nq.setSelectionRange(pos, pos); }
+  });
 }
 
-async function doCreateKey(){
-  const btn = $("k_go"); btn.disabled = true;
-  try{
-    const scopes = $("k_scope").value.split(",").map(s => s.trim()).filter(Boolean);
-    const d = await call("keyManage", {
-      action: "create",
-      name: $("k_name").value.trim() || "New key",
-      api_slugs: scopes,
-      rate_limit_per_minute: Number($("k_rate").value) || undefined,
-    });
-    showSecret(d.api_key);
-    viewDashboard();
-  }catch(e){ toast(e.message, "err"); btn.disabled = false; }
+function setCat(slug) { state.catFilter = slug; render(); }
+
+async function loadCatalog() {
+  const { status, body } = await call("publicCatalog", {});
+  if (status === 200) state.catalog = body.data;
+  else toast((body.error && body.error.message) || "Could not load catalog", "bad");
+  render();
 }
 
-function showSecret(secret){
-  showModal(`<h2 style="margin-top:0">Your new API key</h2>
-    <p>This is the only time the full key will be shown. Store it in a secret manager now.</p>
-    <div class="secret mono" id="sec">${esc(secret)}</div>
-    <div class="row" style="margin-top:16px;justify-content:flex-end">
-      <button class="btn ghost" onclick="copySecret()">Copy</button>
-      <button class="btn" onclick="closeModal()">I have stored it</button>
-    </div>`);
-}
-function copySecret(){
-  const t = $("sec").textContent;
-  navigator.clipboard.writeText(t).then(() => toast("Copied to clipboard", "ok"), () => toast("Copy failed", "err"));
+function openDoc(slug) { state.docSlug = slug; state.docs = null; go("docs"); }
+function tryApi(slug) {
+  state.pgApi = slug; state.pgEp = ""; state.pgResult = null;
+  go("playground");
 }
 
-async function revokeKey(id){
-  if (!confirm("Revoke this key? Applications using it will immediately lose access.")) return;
-  try{ await call("keyManage", { action: "revoke", key_id: id }); toast("Key revoked", "ok"); viewDashboard(); }
-  catch(e){ toast(e.message, "err"); }
-}
-async function regenKey(id){
-  if (!confirm("Rotate this key? The current secret stops working within a few seconds.")) return;
-  try{
-    const d = await call("keyManage", { action: "regenerate", key_id: id });
-    showSecret(d.api_key); viewDashboard();
-  }catch(e){ toast(e.message, "err"); }
-}
+/* ---------------- docs ---------------- */
+function viewDocs() {
+  const cat = state.catalog;
+  if (!cat) { loadCatalog(); return `<div class="empty">Loading…</div>`; }
+  const slug = state.docSlug || (cat.apis[0] && cat.apis[0].slug);
+  if (!state.docs && slug) loadDoc(slug);
+  const list = (cat.apis || []).map((a) =>
+    `<button class="${a.slug === slug ? "on" : ""}" onclick="openDoc('${esc(a.slug)}')">${esc(a.name)}</button>`).join("");
+  if (!state.docs) return `<div class="section grid2"><div class="sidelist">${list}</div><div class="empty">Loading documentation…</div></div>`;
 
-/* ------------------------------------------------------------------ usage */
-async function viewUsage(){
-  if (!state.dev) return viewAuth();
-  let d;
-  try{ d = await call("usageStats", { range_days: 30 }); }
-  catch(e){ $("app").innerHTML = `<div class="card empty">${esc(e.message)}</div>`; return; }
-  const t = d.totals;
-  const maxDay = Math.max(1, ...d.by_day.map(x => x.requests));
-  $("app").innerHTML = `
-    <h1>Usage analytics</h1>
-    <p class="lead">Last ${d.range.days} days · ${num(d.scan.scanned_records)} records scanned${d.scan.truncated ? " (result truncated at scan cap)" : ""}</p>
-
-    <div class="grid g4" style="margin-top:18px">
-      <div class="card stat"><div class="label">Requests</div><div class="value">${num(t.requests)}</div></div>
-      <div class="card stat"><div class="label">Success rate</div><div class="value" style="color:${t.success_rate_percent>=95?"var(--ok)":"var(--warn)"}">${pct(t.success_rate_percent)}</div><div class="sub">${num(t.successful)} ok · ${num(t.failed)} failed</div></div>
-      <div class="card stat"><div class="label">Avg latency</div><div class="value">${num(t.avg_response_time_ms)}<span style="font-size:12px;color:var(--muted)">ms</span></div></div>
-      <div class="card stat"><div class="label">p95 latency</div><div class="value">${num(t.p95_response_time_ms)}<span style="font-size:12px;color:var(--muted)">ms</span></div></div>
-    </div>
-
-    <h2>Requests per day</h2>
-    <div class="card">
-      ${d.by_day.length ? d.by_day.map(day => `
-        <div style="display:flex;align-items:center;gap:12px;padding:5px 0">
-          <span class="mono" style="font-size:12px;color:var(--muted);width:88px">${esc(day.date)}</span>
-          <div class="bar" style="flex:1"><i style="width:${Math.round(day.requests/maxDay*100)}%"></i></div>
-          <span style="width:64px;text-align:right;font-size:12.5px">${num(day.requests)}</span>
-          <span style="width:74px;text-align:right;font-size:12px;color:var(--muted)">${num(day.avg_response_time_ms)}ms</span>
-        </div>`).join("") : `<div class="empty">No traffic in this period.</div>`}
-    </div>
-
-    <div class="grid g2" style="margin-top:16px">
-      <div class="card">
-        <h2 style="margin-top:0">By endpoint</h2>
-        ${d.by_endpoint.length ? `<table><thead><tr><th>Endpoint</th><th>Reqs</th><th>Success</th><th>Avg</th></tr></thead><tbody>
-          ${d.by_endpoint.slice(0,12).map(e => `<tr>
-            <td class="mono" style="font-size:12px">${esc(e.endpoint)}</td>
-            <td>${num(e.requests)}</td>
-            <td>${pct(e.success_rate_percent)}</td>
-            <td>${num(e.avg_response_time_ms)}ms</td></tr>`).join("")}
-        </tbody></table>` : `<div class="empty">No data</div>`}
+  const d = state.docs;
+  const api = d.api || {};
+  const auth = d.authentication || {};
+  const eps = d.endpoints || [];
+  const gw = d.gateway_url || (BASE + "/apiGateway");
+  const epCards = eps.map((e) => {
+    const params = (e.parameters || []).map((p) =>
+      `<tr><td class="mono">${esc(p.name)}</td><td>${esc(p.in || "body")}</td><td>${esc(p.type || "")}</td><td>${p.required ? "yes" : "no"}</td><td>${esc(p.description || "")}</td></tr>`).join("");
+    const example = `curl -X ${esc(e.method)} '${gw}' \\
+  -H 'X-Api-Key: mr_riduy_ai_YOUR_KEY' \\
+  -H 'Content-Type: application/json' \\
+  -d '${esc(JSON.stringify({ api: api.slug, endpoint: e.slug, body: (e.request_body_example || {}) }))}'`;
+    return `<div class="doc-ep">
+      <div class="row" style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <span class="method ${String(e.method).toLowerCase()}">${esc(e.method)}</span>
+        <strong style="font-weight:500">${esc(e.path)}</strong>
       </div>
-      <div class="card">
-        <h2 style="margin-top:0">By API key</h2>
-        ${d.by_key.length ? `<table><thead><tr><th>Key</th><th>Reqs</th><th>Success</th><th>Avg</th></tr></thead><tbody>
-          ${d.by_key.map(k => `<tr>
-            <td class="mono" style="font-size:12px">${esc(k.label)}</td>
-            <td>${num(k.requests)}</td>
-            <td>${pct(k.success_rate_percent)}</td>
-            <td>${num(k.avg_response_time_ms)}ms</td></tr>`).join("")}
-        </tbody></table>` : `<div class="empty">No data</div>`}
+      <p class="hint" style="margin-bottom:12px">${esc(e.summary || e.description || "")}</p>
+      ${params ? `<table style="margin-bottom:14px"><thead><tr><th>Parameter</th><th>In</th><th>Type</th><th>Required</th><th>Description</th></tr></thead><tbody>${params}</tbody></table>` : ""}
+      <pre class="code sm">${esc(example)}</pre>
+    </div>`;
+  }).join("");
+
+  return `<section class="section">
+    <div class="section-head"><div>
+      <div class="title" style="font-size:28px;letter-spacing:-.6px">${esc(api.name || "")}</div>
+      <div class="meta">${esc(api.description || "")}</div>
+    </div>
+    <button class="btn grey sm" onclick="tryApi('${esc(api.slug)}')">Open in playground</button></div>
+    <div class="grid2">
+      <div class="sidelist">${list}</div>
+      <div>
+        <div class="panel" style="margin-bottom:20px"><div class="pb">
+          <div class="stats" style="margin-bottom:18px">
+            <div class="stat"><div class="k">Version</div><div class="v" style="font-size:20px">${esc(api.version || "v1")}</div></div>
+            <div class="stat"><div class="k">Endpoints</div><div class="v" style="font-size:20px">${eps.length}</div></div>
+            <div class="stat"><div class="k">Auth</div><div class="v" style="font-size:20px">API key</div></div>
+          </div>
+          <h3 style="margin-bottom:8px">Authentication</h3>
+          <p class="hint" style="margin-bottom:12px">${esc(auth.header || "Send your key in the X-Api-Key header.")}</p>
+          <pre class="code sm">${esc(`X-Api-Key: mr_riduy_ai_YOUR_KEY`)}</pre>
+          <h3 style="margin:18px 0 8px">Gateway URL</h3>
+          <pre class="code sm">${esc(gw)}</pre>
+        </div></div>
+        <h3 style="margin-bottom:14px">Endpoints</h3>
+        ${epCards}
       </div>
     </div>
-
-    <h2>Status codes</h2>
-    <div class="card"><div class="row" style="gap:8px">
-      ${d.by_status.length ? d.by_status.map(s => `<span class="pill ${s.status_code<400?"ok":"bad"}">${s.status_code} · ${num(s.count)}</span>`).join("") : `<span class="muted">No data</span>`}
-    </div></div>`;
+  </section>`;
 }
 
-/* ------------------------------------------------------------------ history */
-async function viewHistory(){
-  if (!state.dev) return viewAuth();
-  let d;
-  try{ d = await call("requestHistory", { limit: 50 }); }
-  catch(e){ $("app").innerHTML = `<div class="card empty">${esc(e.message)}</div>`; return; }
-  state.histCursor = d.next_cursor;
-  $("app").innerHTML = `
-    <h1>Request history</h1>
-    <p class="lead">Every gateway call made with your keys, newest first.</p>
-    <div class="row" style="margin:14px 0">
-      <select id="hf" onchange="loadHistory(true)" style="max-width:190px">
-        <option value="">All requests</option><option value="ok">Successful only</option><option value="fail">Failures only</option>
-      </select>
-      <button class="btn ghost sm" onclick="loadHistory(true)">Refresh</button>
-    </div>
-    <div class="card" style="padding:0;overflow:auto"><div id="histTable"></div></div>
-    <div class="row" style="margin-top:14px;justify-content:center">
-      <button class="btn ghost sm" id="moreBtn" onclick="loadHistory(false)" ${d.has_more?"":"style='display:none'"}>Load more</button>
-    </div>`;
-  renderHistRows(d.requests, false);
-  state.histHasMore = d.has_more;
-  $("moreBtn").style.display = d.has_more ? "" : "none";
+async function loadDoc(slug) {
+  const { status, body } = await call("apiDocs", { api_slug: slug });
+  if (status === 200) { state.docs = body.data; state.docSlug = slug; }
+  else toast((body.error && body.error.message) || "Could not load docs", "bad");
+  render();
 }
 
-function histRow(r){
-  return `<tr>
-    <td class="mono" style="font-size:11.5px;color:var(--muted);white-space:nowrap">${esc((r.timestamp||"").replace("T"," ").slice(0,19))}</td>
-    <td><span class="method m-${esc(r.method)}">${esc(r.method)}</span></td>
-    <td class="mono" style="font-size:12px">${esc(r.endpoint_path || "—")}</td>
-    <td><span class="pill ${r.success?"ok":"bad"}">${esc(r.status_code)}</span></td>
-    <td>${num(r.response_time_ms)}ms</td>
-    <td style="font-size:12px;color:var(--muted)">${esc(r.error_code || "—")}</td>
-    <td style="font-size:12px;color:var(--muted)">${esc(r.source || "api")}</td>
-  </tr>`;
+/* ---------------- auth ---------------- */
+function viewAuth() {
+  const reg = state.authTab === "register";
+  return `<section class="section" style="max-width:460px;margin:48px auto">
+    <div class="panel"><div class="pb">
+      <h2 style="margin-bottom:6px">${reg ? "Create your account" : "Sign in"}</h2>
+      <p class="hint" style="margin-bottom:20px">${reg ? "Get a free key for 60 requests per minute and 10,000 per day." : "Use the email and password you registered with."}</p>
+      <div class="chips" style="justify-content:flex-start;margin:0 0 20px">
+        <button class="chip ${!reg ? "on" : ""}" onclick="openAuth('login')">Sign in</button>
+        <button class="chip ${reg ? "on" : ""}" onclick="openAuth('register')">Create account</button>
+      </div>
+      ${reg ? `<div class="field"><label>Full name</label><input id="a_name" placeholder="Your name"/></div>` : ""}
+      <div class="field"><label>Email</label><input id="a_email" type="email" placeholder="you@example.com"/></div>
+      <div class="field"><label>Password</label><input id="a_pass" type="password" placeholder="${reg ? "At least 8 characters" : "Your password"}"/></div>
+      ${reg ? `<div class="field"><label>Company (optional)</label><input id="a_company" placeholder="Optional"/></div>` : ""}
+      <button class="btn" id="a_btn" style="width:100%;height:40px" onclick="submitAuth(${reg})">${reg ? "Create account" : "Sign in"}</button>
+    </div></div>
+  </section>`;
 }
 
-function renderHistRows(rows, append){
-  const host = $("histTable");
-  if (!host) return;
-  if (!append){
-    host.innerHTML = rows.length ? `<table><thead><tr><th>Time (UTC)</th><th>Method</th><th>Endpoint</th><th>Status</th><th>Latency</th><th>Error</th><th>Source</th></tr></thead><tbody id="histBody"></tbody></table>`
-      : `<div class="empty">No requests recorded yet.</div>`;
+async function submitAuth(reg) {
+  const email = ($("a_email") || {}).value || "";
+  const pass = ($("a_pass") || {}).value || "";
+  if (!email || !pass) return toast("Email and password are required", "bad");
+  const payload = reg
+    ? { email, password: pass, full_name: ($("a_name") || {}).value || "", company: ($("a_company") || {}).value || "" }
+    : { email, password: pass };
+  const btn = $("a_btn"); if (btn) { btn.disabled = true; btn.textContent = "Please wait…"; }
+  const { status, body } = await call(reg ? "devRegister" : "devLogin", payload);
+  if (btn) { btn.disabled = false; }
+  if (status >= 200 && status < 300 && body.data && body.data.token) {
+    state.token = body.data.token;
+    localStorage.setItem(TOKEN_KEY, state.token);
+    state.dev = body.data.developer;
+    state.authTab = "login";
+    toast(reg ? "Account created. Generate your first key." : "Signed in", "ok");
+    go("dashboard");
+  } else {
+    toast((body.error && body.error.message) || "Authentication failed", "bad");
+    if (btn) btn.textContent = reg ? "Create account" : "Sign in";
   }
-  const body = $("histBody");
-  if (body) body.insertAdjacentHTML("beforeend", rows.map(histRow).join(""));
 }
 
-async function loadHistory(reset){
-  const filter = $("hf") ? $("hf").value : "";
-  const payload = { limit: 50 };
-  if (filter === "ok") payload.success = true;
-  if (filter === "fail") payload.success = false;
-  if (!reset && state.histCursor) payload.cursor = state.histCursor;
-  try{
-    const d = await call("requestHistory", payload);
-    renderHistRows(d.requests, !reset);
-    state.histCursor = d.next_cursor;
-    $("moreBtn").style.display = d.has_more ? "" : "none";
-  }catch(e){ toast(e.message, "err"); }
-}
-
-/* ------------------------------------------------------------------ playground */
-async function viewPlayground(){
-  let cat;
-  try{ cat = await call("publicCatalog", {}); }
-  catch(e){ $("app").innerHTML = `<div class="card empty">${esc(e.message)}</div>`; return; }
-  const apis = cat.apis || [];
-  if (!apis.length){ $("app").innerHTML = `<div class="card empty">No APIs available yet.</div>`; return; }
-  const apiSlug = state.pgApi || (apis[0] && apis[0].slug);
-  state.pgApi = apiSlug;
-  const api = apis.find(a => a.slug === apiSlug) || apis[0];
-  const eps = api.endpoints || [];
-  const epSlug = state.pgEp || (eps[0] && eps[0].slug);
-  state.pgEp = epSlug;
-  const ep = eps.find(e => e.slug === epSlug) || eps[0];
-
-  let keys = [];
-  if (state.dev){ try{ keys = (await call("keyManage", { action: "list" })).keys.filter(k => k.status === "active"); }catch(e){} }
-
-  $("app").innerHTML = `
-    <h1>Testing playground</h1>
-    <p class="lead">Requests are executed by the real gateway. Nothing here is simulated: the status, headers and body you see come back from the live API, and the call is recorded in your usage.</p>
-    ${!state.dev ? `<div class="warnbox">You are not signed in. <a href="#" onclick="go('auth');return false">Sign in</a> to run authenticated requests.</div>` : ""}
-    ${state.dev && !keys.length ? `<div class="warnbox">You have no active API key. <a href="#" onclick="go('dashboard');return false">Generate one</a> first.</div>` : ""}
-
-    <div class="grid g2" style="margin-top:18px">
-      <div class="card">
-        <label>API</label>
-        <select onchange="state.pgApi=this.value;state.pgEp=null;go('playground')">
-          ${apis.map(a => `<option value="${esc(a.slug)}" ${a.slug===apiSlug?"selected":""}>${esc(a.name)}</option>`).join("")}
-        </select>
-        <label>Endpoint</label>
-        <select onchange="state.pgEp=this.value;go('playground')">
-          ${eps.map(e => `<option value="${esc(e.slug)}" ${e.slug===epSlug?"selected":""}>${esc(e.method)} ${esc(e.path)}</option>`).join("")}
-        </select>
-        ${state.dev ? `<label>API key</label>
-        <select id="pg_key">${keys.map(k => `<option value="${esc(k.id)}">${esc(k.name)} · ${esc(k.masked_key)}</option>`).join("")}</select>` : ""}
-        <label>Request body (JSON)</label>
-        <textarea id="pg_body" placeholder='{"text":"hello world"}'>${esc(JSON.stringify(defaultBody(ep), null, 2))}</textarea>
-        <div class="row" style="margin-top:14px">
-          <button class="btn" id="pg_send" onclick="sendPlayground()">Send request</button>
-          <span class="hint" style="margin:0">${esc(ep.method)} ${esc(ep.path)}</span>
-        </div>
-      </div>
-      <div class="card">
-        <div class="row" style="justify-content:space-between;margin-bottom:8px">
-          <strong>Response</strong><span id="pg_meta" class="hint"></span>
-        </div>
-        <div id="pg_out"><div class="empty">Send a request to see the live response.</div></div>
-      </div>
-    </div>`;
-}
-
-function defaultBody(ep){
-  if (ep.request_body_example && Object.keys(ep.request_body_example).length) return ep.request_body_example;
-  if (ep.method === "GET") return {};
-  return { text: "hello world" };
-}
-
-async function sendPlayground(){
-  if (!state.dev){ toast("Sign in to run requests", "err"); return; }
-  const btn = $("pg_send"); btn.disabled = true;
-  $("pg_out").innerHTML = `<div class="empty">Executing against the live gateway…</div>`;
-  try{
-    let body = {};
-    const raw = $("pg_body").value.trim();
-    if (raw){ try{ body = JSON.parse(raw); }catch(e){ throw new Error("Request body is not valid JSON"); } }
-    const d = await call("playgroundSend", {
-      key_id: $("pg_key").value,
-      api_slug: state.pgApi,
-      endpoint_slug: state.pgEp,
-      params: {}, body,
-    });
-    const r = d.response;
-    $("pg_meta").textContent = `${r.status_code} · ${num(d.round_trip_ms)}ms · ${d.method} ${d.path}`;
-    $("pg_out").innerHTML = `
-      <div class="row" style="gap:8px;margin-bottom:10px">
-        <span class="pill ${r.status_code<400?"ok":"bad"}">HTTP ${r.status_code}</span>
-        <span class="pill muted">${num(d.round_trip_ms)}ms round trip</span>
-        <span class="pill muted">via ${esc(d.executed_through)}</span>
-      </div>
-      <pre style="max-height:430px">${esc(JSON.stringify(r.body, null, 2))}</pre>`;
-  }catch(e){
-    $("pg_out").innerHTML = `<div class="card" style="border-color:#4b2333"><strong style="color:var(--bad)">${esc(e.message)}</strong></div>`;
-    toast(e.message, "err");
-  }finally{ btn.disabled = false; }
-}
-
-/* ------------------------------------------------------------------ admin */
-async function viewAdmin(){
-  if (!state.dev || state.dev.role !== "admin"){ $("app").innerHTML = `<div class="card empty">Administrator access required.</div>`; return; }
-  let apis = [], cats = [];
-  try{
-    apis = (await call("apiManage", { action: "list" })).apis || [];
-    cats = (await call("categoryManage", { action: "list" })).categories || [];
-  }catch(e){ $("app").innerHTML = `<div class="card empty">${esc(e.message)}</div>`; return; }
-  state.adminApis = apis;
-
-  $("app").innerHTML = `
-    <h1>API management</h1>
-    <p class="lead">Create, publish and retire API products. Changes reach the gateway within about 30 seconds.</p>
-
-    <div class="section-head"><h2>API products <span class="pill muted">${apis.length}</span></h2>
-      <button class="btn" onclick="apiFormPrompt()">New API</button></div>
-    <div class="card" style="padding:0;overflow:auto">
-      ${apis.length ? `<table><thead><tr><th>Name</th><th>Slug</th><th>Category</th><th>Version</th><th>Endpoints</th><th>Status</th><th></th></tr></thead><tbody>
-        ${apis.map(a => `<tr>
-          <td><strong>${esc(a.name)}</strong><div style="font-size:12px;color:var(--muted)">${esc(a.description||"")}</div></td>
-          <td class="mono" style="font-size:12px">${esc(a.slug)}</td>
-          <td>${esc(a.category_slug||"—")}</td>
-          <td>${esc(a.version)}</td>
-          <td>${num(a.endpoint_count)}</td>
-          <td><span class="pill ${a.status==="active"?"ok":a.status==="draft"?"warn":"muted"}">${esc(a.status)}</span></td>
-          <td style="white-space:nowrap">
-            <button class="btn ghost sm" onclick="viewEndpoints('${esc(a.slug)}')">Endpoints</button>
-            <button class="btn ghost sm" onclick="toggleApi('${esc(a.slug)}','${esc(a.status)}')">${a.status==="active"?"Deactivate":"Activate"}</button>
-            <button class="btn danger sm" onclick="deleteApi('${esc(a.slug)}')">Delete</button>
-          </td></tr>`).join("")}
-      </tbody></table>` : `<div class="empty">No APIs yet.</div>`}
-    </div>
-
-    <div id="epPanel"></div>
-
-    <div class="section-head"><h2>Categories <span class="pill muted">${cats.length}</span></h2>
-      <button class="btn ghost" onclick="categoryPrompt()">New category</button></div>
-    <div class="card" style="padding:0;overflow:auto">
-      ${cats.length ? `<table><thead><tr><th>Name</th><th>Slug</th><th>APIs</th><th>Active</th></tr></thead><tbody>
-        ${cats.map(c => `<tr><td><strong>${esc(c.name)}</strong><div style="font-size:12px;color:var(--muted)">${esc(c.description||"")}</div></td>
-        <td class="mono" style="font-size:12px">${esc(c.slug)}</td><td>${num(c.api_count)}</td>
-        <td><span class="pill ${c.is_active!==false?"ok":"muted"}">${c.is_active!==false?"yes":"no"}</span></td></tr>`).join("")}
-      </tbody></table>` : `<div class="empty">No categories yet.</div>`}
-    </div>`;
-}
-
-function apiFormPrompt(){
-  showModal(`<h2 style="margin-top:0">Create API product</h2>
-    <label>Name</label><input id="api_name" placeholder="Weather API">
-    <label>Description</label><input id="api_desc" placeholder="Short summary shown in the catalog">
-    <label>Category slug</label><input id="api_cat" placeholder="system">
-    <label>Base path</label><input id="api_base" placeholder="/v1/weather">
-    <label>Status</label>
-    <select id="api_status"><option value="draft">draft</option><option value="active">active</option><option value="inactive">inactive</option></select>
-    <div class="row" style="margin-top:18px;justify-content:flex-end">
-      <button class="btn ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn" id="api_go" onclick="doCreateApi()">Create</button>
-    </div>`);
-}
-
-async function doCreateApi(){
-  const btn = $("api_go"); btn.disabled = true;
-  try{
-    await call("apiManage", {
-      action: "create",
-      name: $("api_name").value.trim(),
-      description: $("api_desc").value.trim(),
-      category_slug: $("api_cat").value.trim(),
-      base_path: $("api_base").value.trim() || undefined,
-      status: $("api_status").value,
-    });
-    closeModal(); toast("API created", "ok"); viewAdmin();
-  }catch(e){ toast(e.message, "err"); btn.disabled = false; }
-}
-
-async function toggleApi(slug, status){
-  try{
-    await call("apiManage", { action: "set_status", slug, status: status === "active" ? "inactive" : "active" });
-    toast("Status updated. The gateway refreshes within ~30s.", "ok");
-    viewAdmin();
-  }catch(e){ toast(e.message, "err"); }
-}
-
-async function deleteApi(slug){
-  if (!confirm(`Delete "${slug}" and all of its endpoints? This cannot be undone.`)) return;
-  try{ await call("apiManage", { action: "delete", slug }); toast("API deleted", "ok"); viewAdmin(); }
-  catch(e){ toast(e.message, "err"); }
-}
-
-async function viewEndpoints(slug){
-  const panel = $("epPanel");
-  panel.innerHTML = `<h2>Endpoints · ${esc(slug)}</h2><div class="empty">Loading…</div>`;
-  try{
-    const d = await call("endpointManage", { action: "list", api_slug: slug });
-    panel.innerHTML = `
-      <div class="section-head"><h2>Endpoints · ${esc(slug)} <span class="pill muted">${d.count}</span></h2>
-        <button class="btn ghost" onclick="endpointPrompt('${esc(slug)}')">New endpoint</button></div>
-      <div class="card" style="padding:0;overflow:auto">
-        ${d.endpoints.length ? `<table><thead><tr><th>Method</th><th>Path</th><th>Name</th><th>Handler</th><th>Active</th><th></th></tr></thead><tbody>
-          ${d.endpoints.map(e => `<tr>
-            <td><span class="method m-${esc(e.method)}">${esc(e.method)}</span></td>
-            <td class="mono" style="font-size:12px">${esc(e.path)}</td>
-            <td>${esc(e.name)}</td>
-            <td class="mono" style="font-size:12px">${esc(e.handler_key||"—")}</td>
-            <td><span class="pill ${e.is_active!==false?"ok":"muted"}">${e.is_active!==false?"yes":"no"}</span></td>
-            <td style="white-space:nowrap">
-              <button class="btn ghost sm" onclick="toggleEndpoint('${esc(e.id)}',${e.is_active!==false})">${e.is_active!==false?"Disable":"Enable"}</button>
-              <button class="btn danger sm" onclick="deleteEndpoint('${esc(e.id)}')">Delete</button>
-            </td></tr>`).join("")}
-        </tbody></table>` : `<div class="empty">No endpoints yet.</div>`}
-      </div>`;
-  }catch(e){ panel.innerHTML = `<div class="card empty">${esc(e.message)}</div>`; }
-}
-
-function endpointPrompt(slug){
-  showModal(`<h2 style="margin-top:0">New endpoint for ${esc(slug)}</h2>
-    <label>Name</label><input id="ep_name" placeholder="Current weather">
-    <div class="row" style="gap:10px">
-      <div style="flex:0 0 110px"><label>Method</label>
-        <select id="ep_method"><option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option></select></div>
-      <div style="flex:1"><label>Path</label><input id="ep_path" placeholder="/v1/weather/current"></div>
-    </div>
-    <label>Handler key</label>
-    <select id="ep_handler">
-      <option value="">— none (returns 501) —</option>
-      <option>system.health</option><option>system.time</option><option>crypto.sha256</option><option>crypto.random</option>
-      <option>text.slugify</option><option>text.stats</option><option>json.validate</option><option>platform.usage</option>
-      <option>data.apis.list</option><option>data.endpoints.list</option><option>echo.request</option>
-    </select>
-    <label>Summary</label><input id="ep_summary" placeholder="What this endpoint does">
-    <div class="row" style="margin-top:18px;justify-content:flex-end">
-      <button class="btn ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn" id="ep_go" onclick="doCreateEndpoint('${esc(slug)}')">Create</button>
-    </div>`);
-}
-
-async function doCreateEndpoint(slug){
-  const btn = $("ep_go"); btn.disabled = true;
-  try{
-    await call("endpointManage", {
-      action: "create", api_slug: slug,
-      name: $("ep_name").value.trim(), method: $("ep_method").value,
-      path: $("ep_path").value.trim(), handler_key: $("ep_handler").value,
-      summary: $("ep_summary").value.trim(),
-    });
-    closeModal(); toast("Endpoint created", "ok"); viewEndpoints(slug);
-  }catch(e){ toast(e.message, "err"); btn.disabled = false; }
-}
-
-async function toggleEndpoint(id, active){
-  try{ await call("endpointManage", { action: "update", id, is_active: !active }); viewEndpoints(state.adminApis ? state.pgApiCursor || "" : ""); viewAdmin(); }
-  catch(e){ toast(e.message, "err"); }
-}
-async function deleteEndpoint(id){
-  if (!confirm("Delete this endpoint?")) return;
-  try{ await call("endpointManage", { action: "delete", id }); toast("Endpoint deleted", "ok"); viewAdmin(); }
-  catch(e){ toast(e.message, "err"); }
-}
-function categoryPrompt(){
-  showModal(`<h2 style="margin-top:0">New category</h2>
-    <label>Name</label><input id="cat_name" placeholder="Weather">
-    <label>Description</label><input id="cat_desc" placeholder="Weather and climate data">
-    <div class="row" style="margin-top:18px;justify-content:flex-end">
-      <button class="btn ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn" id="cat_go" onclick="doCreateCategory()">Create</button>
-    </div>`);
-}
-async function doCreateCategory(){
-  const btn = $("cat_go"); btn.disabled = true;
-  try{
-    await call("categoryManage", { action: "create", name: $("cat_name").value.trim(), description: $("cat_desc").value.trim() });
-    closeModal(); toast("Category created", "ok"); viewAdmin();
-  }catch(e){ toast(e.message, "err"); btn.disabled = false; }
-}
-
-/* ------------------------------------------------------------------ modal */
-function showModal(html){
-  $("modalRoot").innerHTML = `<div class="modal" onclick="if(event.target===this)closeModal()"><div class="card">${html}</div></div>`;
-}
-function closeModal(){ $("modalRoot").innerHTML = ""; }
-
-/* ------------------------------------------------------------------ boot */
-(async function boot(){
-  await loadSession();
+async function logout() {
+  await call("devSession", { action: "logout" });
+  state.token = ""; state.dev = null; state.keys = []; state.authTab = "login";
+  localStorage.removeItem(TOKEN_KEY);
+  toast("Signed out");
   go("catalog");
-})();
+}
+
+/* ---------------- dashboard ---------------- */
+function viewDashboard() {
+  if (!state.dev) return viewAuth();
+  loadDashboard();
+  const d = state.dev, o = state.overview || {};
+  const keys = state.keys || [];
+  const rows = keys.map((k) => `<tr>
+    <td><strong style="font-weight:500">${esc(k.name)}</strong><div class="hint mono">MR RIDUY AI API</div></td>
+    <td class="mono">${esc(k.masked_key || "")}</td>
+    <td><span class="pill ${k.status === "active" ? "" : "admin"}">${esc(k.status)}</span></td>
+    <td>${num(pick(k, "request_count", "requests"))}</td>
+    <td class="mono">${num(k.rate_limit_per_minute)}/min</td>
+    <td style="white-space:nowrap">
+      <button class="btn ghost sm" onclick="rotateKey('${esc(k.id)}')">Rotate</button>
+      ${k.status === "active" ? `<button class="btn danger sm" onclick="revokeKey('${esc(k.id)}')">Revoke</button>` : ""}
+    </td></tr>`).join("");
+
+  return `<section class="section">
+    <div class="section-head"><div>
+      <div class="title">Welcome back, ${esc((d.full_name || d.email).split(" ")[0])}</div>
+      <div class="meta">${esc(d.plan)} plan · ${num(d.rate_limit_per_minute)} requests/min · ${num(d.daily_quota).toLocaleString()} requests/day</div>
+    </div><button class="btn" onclick="newKey()">Generate new key</button></div>
+    <div class="stats" style="margin-bottom:28px">
+      <div class="stat"><div class="k">Active keys</div><div class="v">${num(pick(o, "active_keys"))}</div></div>
+      <div class="stat"><div class="k">Requests today</div><div class="v">${num(pick(o, "requests_today_scanned", "requests_today"))}</div></div>
+      <div class="stat"><div class="k">Successful</div><div class="v" style="color:var(--green)">${num(pick(o, "success_today_scanned", "success_today"))}</div></div>
+      <div class="stat"><div class="k">Failed</div><div class="v" style="color:var(--red)">${num(pick(o, "failed_today_scanned", "failed_today"))}</div></div>
+    </div>
+    <div class="panel">
+      <div class="ph"><h3>API keys</h3><span class="hint">Secrets are stored as SHA-256 hashes only</span></div>
+      ${keys.length ? `<table><thead><tr><th>Name</th><th>Key</th><th>Status</th><th>Used</th><th>Limit</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+        : `<div class="empty">No keys yet. Generate one to start calling the gateway.<br><br><button class="btn sm" onclick="newKey()">Generate new key</button></div>`}
+    </div>
+  </section>`;
+}
+
+async function loadDashboard() {
+  if (!state.dev) return;
+  const [k, s] = await Promise.all([
+    call("keyManage", { action: "list" }),
+    call("devSession", { action: "me" })
+  ]);
+  if (k.status === 200) state.keys = (k.body.data.keys || []);
+  if (s.status === 200) state.overview = s.body.data.overview;
+  if (state.view === "dashboard") render();
+}
+
+function newKey() {
+  openModal(`<div class="mh">Generate API key</div>
+    <div class="mb">
+      <div class="field"><label>Key name</label><input id="k_name" placeholder="Production"/></div>
+      <p class="hint">The full secret is shown once. Store it in a secret manager or environment variable.</p>
+    </div>
+    <div class="mf"><button class="btn grey" onclick="closeModal()">Cancel</button><button class="btn" id="k_go" onclick="createKey()">Generate</button></div>`);
+}
+
+function openModal(html) { $("modals").innerHTML = `<div class="scrim" onclick="if(event.target===this)closeModal()"><div class="modal">${html}</div></div>`; }
+function closeModal() { $("modals").innerHTML = ""; }
+
+function revealKey(secret, extra) {
+  const snippet = `curl '${BASE}/apiGateway' \\
+  -H 'X-Api-Key: ${secret}' \\
+  -H 'Content-Type: application/json' \\
+  -d '{"api":"ai","endpoint":"chat","body":{"message":"Hello"}}'`;
+  openModal(`<div class="mh">Your new API key</div>
+    <div class="mb">
+      <p class="hint" style="margin-bottom:14px">${esc(extra || "This is the only time the full key is shown. Copy it now.")}</p>
+      <div class="brandkey">MR RIDUY AI API</div>
+      <div class="keybox" id="secretval">${esc(secret)}</div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn sm" onclick="copyText('${esc(secret)}')">Copy key</button>
+        <button class="btn grey sm" onclick="copyText(\`${esc(snippet)}\`)">Copy curl example</button>
+      </div>
+      <h3 style="margin:22px 0 8px">How to use it</h3>
+      <pre class="code sm">${esc(snippet)}</pre>
+      <p class="hint" style="margin-top:12px">Paste the same key into your website, app or game. Never ship it in client-side code; call the gateway from your server.</p>
+    </div>
+    <div class="mf"><button class="btn" onclick="closeModal()">I have stored it</button></div>`);
+}
+
+async function createKey() {
+  const name = ($("k_name") || {}).value || "Default key";
+  const btn = $("k_go"); if (btn) { btn.disabled = true; btn.textContent = "Generating…"; }
+  const { status, body } = await call("keyManage", { action: "create", name });
+  if (status === 201) {
+    state.keys = []; closeModal(); revealKey(body.data.api_key, body.data.warning);
+    await loadDashboard();
+  } else {
+    if (btn) { btn.disabled = false; btn.textContent = "Generate"; }
+    toast((body.error && body.error.message) || "Could not create key", "bad");
+  }
+}
+
+async function revokeKey(id) {
+  const { status, body } = await call("keyManage", { action: "revoke", key_id: id });
+  toast(status === 200 ? "Key revoked" : ((body.error && body.error.message) || "Failed"), status === 200 ? "ok" : "bad");
+  await loadDashboard();
+}
+
+async function rotateKey(id) {
+  const { status, body } = await call("keyManage", { action: "regenerate", key_id: id });
+  if (status === 201) { revealKey(body.data.api_key, body.data.warning); await loadDashboard(); }
+  else toast((body.error && body.error.message) || "Could not rotate", "bad");
+}
+
+function copyText(t) {
+  navigator.clipboard.writeText(t).then(() => toast("Copied", "ok")).catch(() => toast("Copy failed", "bad"));
+}
+
+/* ---------------- playground ---------------- */
+function viewPlayground() {
+  const cat = state.catalog;
+  if (!cat) { loadCatalog(); return `<div class="empty">Loading…</div>`; }
+  if (!state.pgApi && cat.apis[0]) state.pgApi = cat.apis[0].slug;
+  const api = (cat.apis || []).find((a) => a.slug === state.pgApi) || cat.apis[0] || {};
+  const eps = api.endpoints || [];
+  if (!state.pgEp && eps[0]) state.pgEp = eps[0].slug;
+  if (!state.pgKeyId && state.keys && state.keys[0]) state.pgKeyId = state.keys[0].id;
+  if (!state.keys || !state.keys.length) loadDashboard();
+
+  const apiOpts = (cat.apis || []).map((a) => `<option value="${esc(a.slug)}" ${a.slug === api.slug ? "selected" : ""}>${esc(a.name)}</option>`).join("");
+  const epOpts = eps.map((e) => `<option value="${esc(e.slug)}" ${e.slug === state.pgEp ? "selected" : ""}>${esc(e.method)} ${esc(e.path)}</option>`).join("");
+  const keyOpts = (state.keys || []).filter((k) => k.status === "active")
+    .map((k) => `<option value="${esc(k.id)}" ${k.id === state.pgKeyId ? "selected" : ""}>${esc(k.name)} · ${esc(k.masked_key)}</option>`).join("");
+  const r = state.pgResult;
+
+  return `<section class="section">
+    <div class="section-head"><div><div class="title">Playground</div>
+      <div class="meta">Requests are executed by the live gateway. Nothing is simulated, and every call is recorded in your usage.</div></div></div>
+    ${!state.dev ? `<div class="panel"><div class="empty">Sign in to send test requests.<br><br><button class="btn" onclick="openAuth('login')">Sign in</button></div></div>` : `
+    <div class="grid2" style="grid-template-columns:1fr 1fr">
+      <div class="panel"><div class="pb">
+        <div class="field"><label>API</label><select id="pg_api" onchange="pgSetApi(this.value)">${apiOpts}</select></div>
+        <div class="field"><label>Endpoint</label><select id="pg_ep" onchange="state.pgEp=this.value;render()">${epOpts}</select></div>
+        <div class="field"><label>API key</label><select id="pg_key" onchange="state.pgKeyId=this.value">${keyOpts || `<option value="">No active key</option>`}</select></div>
+        <div class="field"><label>Request body (JSON)</label><textarea id="pg_body">${esc(state.pgBody)}</textarea></div>
+        <button class="btn" id="pg_send" onclick="sendPlayground()">Send request</button>
+      </div></div>
+      <div class="panel">
+        <div class="ph"><h3>Response</h3>${r ? `<span class="hint">${esc(r.status)} · ${esc(r.ms)}ms</span>` : ""}</div>
+        <div class="pb">${r ? `<pre class="code">${esc(r.body)}</pre>` : `<p class="hint">Send a request to see the live response.</p>`}</div>
+      </div>
+    </div>`}
+  </section>`;
+}
+
+function pgSetApi(slug) {
+  state.pgApi = slug; state.pgEp = ""; state.pgResult = null;
+  const api = ((state.catalog || {}).apis || []).find((a) => a.slug === slug);
+  const first = api && api.endpoints && api.endpoints[0];
+  if (first) {
+    state.pgEp = first.slug;
+    if (slug === "ai") state.pgBody = "{\n  \"message\": \"Hello from my website\"\n}";
+  }
+  render();
+}
+
+async function sendPlayground() {
+  const bodyText = ($("pg_body") || {}).value || "{}";
+  let parsed;
+  try { parsed = JSON.parse(bodyText || "{}"); }
+  catch (e) { return toast("Request body is not valid JSON", "bad"); }
+  if (!state.pgKeyId) return toast("Create an API key first", "bad");
+  const btn = $("pg_send"); if (btn) { btn.disabled = true; btn.textContent = "Sending…"; }
+  const t0 = performance.now();
+  const { status, body } = await call("playgroundSend", {
+    key_id: state.pgKeyId, api_slug: state.pgApi, endpoint_slug: state.pgEp, body: parsed
+  });
+  const ms = Math.round(performance.now() - t0);
+  if (btn) { btn.disabled = false; btn.textContent = "Send request"; }
+  if (status === 200) {
+    const resp = (body.data && body.data.response) || {};
+    const code = pick(resp, "status_code", "status") || (body.data && body.data.status_code) || 0;
+    state.pgResult = { status: code, ms: pick(body.data, "round_trip_ms") || ms, body: JSON.stringify(pick(resp, "body") || resp, null, 2) };
+    render();
+    await loadDashboard();
+  } else {
+    state.pgResult = { status: status, ms: ms, body: JSON.stringify(body.error || body, null, 2) };
+    render();
+  }
+}
+
+/* ---------------- usage ---------------- */
+function viewUsage() {
+  if (!state.dev) return viewAuth();
+  loadUsage();
+  const u = state.usage;
+  if (!u) return `<div class="empty">Loading usage…</div>`;
+  const t = u.totals || u;
+  const byEp = u.by_endpoint || [];
+  const byKey = u.by_key || [];
+  const byDay = u.by_day || [];
+  const byStatus = u.by_status || [];
+  const maxDay = Math.max(1, ...byDay.map((d) => num(pick(d, "requests", "count"))));
+  const scan = u.scan || {};
+
+  const epRows = byEp.map((r) => `<tr>
+    <td class="mono">${esc(pick(r, "endpoint", "path", "endpoint_path") || "")}</td>
+    <td>${num(pick(r, "requests", "count"))}</td>
+    <td>${pct(pick(r, "success_rate", "success"))}</td>
+    <td>${num(pick(r, "avg_response_time_ms", "avg"))}ms</td></tr>`).join("");
+  const keyRows = byKey.map((r) => `<tr>
+    <td class="mono">${esc(pick(r, "key", "api_key_prefix", "key_prefix") || "")}</td>
+    <td>${num(pick(r, "requests", "count"))}</td>
+    <td>${pct(pick(r, "success_rate", "success"))}</td>
+    <td>${num(pick(r, "avg_response_time_ms", "avg"))}ms</td></tr>`).join("");
+  const dayBars = byDay.map((d) => {
+    const v = num(pick(d, "requests", "count"));
+    return `<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+      <span class="mono" style="width:92px">${esc(pick(d, "date", "day") || "")}</span>
+      <span class="bar" style="flex:1"><i style="width:${Math.round((v / maxDay) * 100)}%"></i></span>
+      <span style="width:48px;text-align:right">${v}</span></div>`;
+  }).join("");
+  const statusChips = byStatus.map((s) => `<span class="tag">${esc(pick(s, "status_code", "status"))} · ${num(pick(s, "count", "requests"))}</span>`).join(" ");
+
+  return `<section class="section">
+    <div class="section-head"><div><div class="title">Usage analytics</div>
+      <div class="meta">Last 30 days · ${num(pick(scan, "scanned", "records"))} records scanned${scan.truncated ? " (capped)" : ""}</div></div>
+      <button class="btn ghost sm" onclick="state.usage=null;render()">Refresh</button></div>
+    <div class="stats" style="margin-bottom:24px">
+      <div class="stat"><div class="k">Requests</div><div class="v">${num(pick(t, "requests", "total_requests"))}</div></div>
+      <div class="stat"><div class="k">Success rate</div><div class="v">${pct(pick(t, "success_rate"))}</div></div>
+      <div class="stat"><div class="k">Avg latency</div><div class="v">${num(pick(t, "avg_response_time_ms", "avg"))}ms</div></div>
+      <div class="stat"><div class="k">P95 latency</div><div class="v">${num(pick(t, "p95_response_time_ms", "p95"))}ms</div></div>
+    </div>
+    <div class="panel" style="margin-bottom:20px"><div class="ph"><h3>Requests per day</h3></div>
+      <div class="pb">${dayBars || `<p class="hint">No traffic yet.</p>`}</div></div>
+    <div class="grid2" style="grid-template-columns:1fr 1fr">
+      <div class="panel"><div class="ph"><h3>By endpoint</h3></div>
+        ${epRows ? `<table><thead><tr><th>Endpoint</th><th>Reqs</th><th>Success</th><th>Avg</th></tr></thead><tbody>${epRows}</tbody></table>` : `<div class="empty">No data</div>`}</div>
+      <div class="panel"><div class="ph"><h3>By API key</h3></div>
+        ${keyRows ? `<table><thead><tr><th>Key</th><th>Reqs</th><th>Success</th><th>Avg</th></tr></thead><tbody>${keyRows}</tbody></table>` : `<div class="empty">No data</div>`}</div>
+    </div>
+    <div class="panel" style="margin-top:20px"><div class="ph"><h3>Status codes</h3></div>
+      <div class="pb">${statusChips || `<p class="hint">No data</p>`}</div></div>
+  </section>`;
+}
+
+async function loadUsage() {
+  if (!state.dev) return;
+  const { status, body } = await call("usageStats", { range_days: 30 });
+  if (status === 200) state.usage = body.data;
+  if (state.view === "usage") render();
+}
+
+/* ---------------- history ---------------- */
+function viewRequests() {
+  if (!state.dev) return viewAuth();
+  loadHistory();
+  const h = state.history;
+  if (!h) return `<div class="empty">Loading history…</div>`;
+  const rows = (h.requests || h.logs || []).map((r) => {
+    const ts = pick(r, "created_date", "timestamp") || "";
+    return `<tr>
+      <td class="mono">${esc(String(ts).replace("T", " ").slice(0, 19))}</td>
+      <td class="mono">${esc(pick(r, "method") || "")}</td>
+      <td class="mono">${esc(pick(r, "endpoint_path", "path") || "")}</td>
+      <td class="${r.success ? "ok" : "bad"}">${esc(pick(r, "status_code"))}</td>
+      <td>${num(pick(r, "response_time_ms"))}ms</td>
+      <td class="hint">${esc(pick(r, "error_code") || "—")}</td>
+      <td><span class="tag">${esc(pick(r, "source") || "api")}</span></td></tr>`;
+  }).join("");
+  return `<section class="section">
+    <div class="section-head"><div><div class="title">Request history</div>
+      <div class="meta">Every gateway call made with your keys, newest first.</div></div>
+      <button class="btn ghost sm" onclick="state.history=null;render()">Refresh</button></div>
+    <div class="panel">${rows ? `<table><thead><tr><th>Time (UTC)</th><th>Method</th><th>Endpoint</th><th>Status</th><th>Latency</th><th>Error</th><th>Source</th></tr></thead><tbody>${rows}</tbody></table>`
+      : `<div class="empty">No requests yet. Try the playground or call the gateway with your key.</div>`}</div>
+  </section>`;
+}
+
+async function loadHistory() {
+  if (!state.dev) return;
+  const { status, body } = await call("requestHistory", { limit: 50 });
+  if (status === 200) state.history = body.data;
+  if (state.view === "requests") render();
+}
+
+/* ---------------- admin ---------------- */
+function viewAdmin() {
+  if (!state.dev || state.dev.role !== "admin") {
+    return `<section class="section"><div class="panel"><div class="empty">Administrator access is required.</div></div></section>`;
+  }
+  loadAdmin();
+  const apis = state.adminApis || [];
+  const cats = state.adminCats || [];
+  const rows = apis.map((a) => `<tr>
+    <td><strong style="font-weight:500">${esc(a.name)}</strong><div class="hint">${esc(a.description || "")}</div></td>
+    <td class="mono">${esc(a.slug)}</td>
+    <td>${esc(a.category_slug || "—")}</td>
+    <td>${num(pick(a, "endpoint_count"), 0)}</td>
+    <td><span class="pill ${a.status === "active" ? "" : "admin"}">${esc(a.status)}</span></td>
+    <td style="white-space:nowrap">
+      <button class="btn ghost sm" onclick="adminEndpoints('${esc(a.slug)}')">Endpoints</button>
+      <button class="btn grey sm" onclick="toggleApi('${esc(a.slug)}','${a.status === "active" ? "inactive" : "active"}')">${a.status === "active" ? "Deactivate" : "Activate"}</button>
+      <button class="btn danger sm" onclick="deleteApi('${esc(a.slug)}')">Delete</button>
+    </td></tr>`).join("");
+  const catRows = cats.map((c) => `<tr><td>${esc(c.name)}<div class="hint">${esc(c.description || "")}</div></td>
+    <td class="mono">${esc(c.slug)}</td><td>${num(pick(c, "api_count"))}</td>
+    <td><span class="pill ${c.is_active === false ? "admin" : ""}">${c.is_active === false ? "hidden" : "live"}</span></td></tr>`).join("");
+  const eps = (state.adminEps || []).map((e) => `<tr>
+    <td><span class="method ${String(e.method).toLowerCase()}">${esc(e.method)}</span></td>
+    <td class="mono">${esc(e.path)}</td>
+    <td class="mono">${esc(e.handler_key || "—")}</td>
+    <td>${num(e.rate_limit_override) || "—"}</td>
+    <td><span class="pill ${e.is_active === false ? "admin" : ""}">${e.is_active === false ? "off" : "on"}</span></td>
+    <td><button class="btn danger sm" onclick="deleteEndpoint('${esc(e.id)}')">Delete</button></td></tr>`).join("");
+
+  return `<section class="section">
+    <div class="section-head"><div><div class="title">API management</div>
+      <div class="meta">Changes reach the gateway within about 30 seconds.</div></div>
+      <div style="display:flex;gap:8px"><button class="btn grey sm" onclick="newCategory()">New category</button><button class="btn sm" onclick="newApi()">New API</button></div></div>
+    <div class="panel" style="margin-bottom:24px"><div class="ph"><h3>API products</h3><span class="hint">${apis.length} total</span></div>
+      ${rows ? `<table><thead><tr><th>Name</th><th>Slug</th><th>Category</th><th>Endpoints</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : `<div class="empty">No APIs</div>`}</div>
+    <div class="panel" style="margin-bottom:24px"><div class="ph"><h3>Categories</h3></div>
+      ${catRows ? `<table><thead><tr><th>Name</th><th>Slug</th><th>APIs</th><th>State</th></tr></thead><tbody>${catRows}</tbody></table>` : `<div class="empty">No categories</div>`}</div>
+    ${state.adminSlug ? `<div class="panel"><div class="ph"><h3>Endpoints · ${esc(state.adminSlug)}</h3>
+      <button class="btn sm" onclick="newEndpoint()">New endpoint</button></div>
+      ${eps ? `<table><thead><tr><th>Method</th><th>Path</th><th>Handler</th><th>Override</th><th>State</th><th></th></tr></thead><tbody>${eps}</tbody></table>` : `<div class="empty">No endpoints</div>`}</div>` : ""}
+  </section>`;
+}
+
+async function loadAdmin() {
+  if (!state.dev || state.dev.role !== "admin") return;
+  const [a, c] = await Promise.all([call("apiManage", { action: "list", include_all: true }), call("categoryManage", { action: "list" })]);
+  if (a.status === 200) state.adminApis = a.body.data.apis || [];
+  if (c.status === 200) state.adminCats = c.body.data.categories || [];
+  if (state.adminSlug) {
+    const e = await call("endpointManage", { action: "list", api_slug: state.adminSlug });
+    if (e.status === 200) state.adminEps = e.body.data.endpoints || [];
+  }
+  if (state.view === "admin") render();
+}
+
+function adminEndpoints(slug) { state.adminSlug = slug === state.adminSlug ? "" : slug; state.adminEps = []; render(); }
+
+async function toggleApi(slug, status) {
+  const { status: st, body } = await call("apiManage", { action: "set_status", slug, status });
+  toast(st === 200 ? "Status updated" : ((body.error && body.error.message) || "Failed"), st === 200 ? "ok" : "bad");
+  await loadAdmin();
+}
+
+async function deleteApi(slug) {
+  if (!confirm("Delete " + slug + " and all of its endpoints?")) return;
+  const { status, body } = await call("apiManage", { action: "delete", slug });
+  toast(status === 200 ? "API deleted" : ((body.error && body.error.message) || "Failed"), status === 200 ? "ok" : "bad");
+  state.adminSlug = ""; await loadAdmin();
+}
+
+async function deleteEndpoint(id) {
+  if (!confirm("Delete this endpoint?")) return;
+  const { status, body } = await call("endpointManage", { action: "delete", endpoint_id: id, id });
+  toast(status === 200 ? "Endpoint deleted" : ((body.error && body.error.message) || "Failed"), status === 200 ? "ok" : "bad");
+  await loadAdmin();
+}
+
+function newApi() {
+  const cats = (state.adminCats || []).map((c) => `<option value="${esc(c.slug)}">${esc(c.name)}</option>`).join("");
+  openModal(`<div class="mh">New API product</div><div class="mb">
+    <div class="field"><label>Name</label><input id="n_name" placeholder="Image Tools API"/></div>
+    <div class="field"><label>Slug</label><input id="n_slug" placeholder="image"/></div>
+    <div class="field"><label>Description</label><input id="n_desc" placeholder="What this API does"/></div>
+    <div class="field"><label>Category</label><select id="n_cat">${cats}</select></div>
+    <div class="field"><label>Base path</label><input id="n_base" placeholder="/v1/image"/></div>
+    <div class="field"><label>Requests per minute</label><input id="n_rl" value="60"/></div>
+  </div><div class="mf"><button class="btn grey" onclick="closeModal()">Cancel</button><button class="btn" onclick="createApi()">Create</button></div>`);
+}
+
+async function createApi() {
+  const payload = {
+    action: "create",
+    name: ($("n_name") || {}).value, slug: ($("n_slug") || {}).value,
+    description: ($("n_desc") || {}).value, category_slug: ($("n_cat") || {}).value,
+    base_path: ($("n_base") || {}).value, default_rate_limit_per_minute: Number(($("n_rl") || {}).value || 60),
+    status: "active", auth_required: true, is_public: true
+  };
+  const { status, body } = await call("apiManage", payload);
+  if (status === 201) { closeModal(); toast("API created", "ok"); await loadAdmin(); }
+  else toast((body.error && body.error.message) || "Failed", "bad");
+}
+
+function newCategory() {
+  openModal(`<div class="mh">New category</div><div class="mb">
+    <div class="field"><label>Name</label><input id="c_name" placeholder="Finance"/></div>
+    <div class="field"><label>Slug</label><input id="c_slug" placeholder="finance"/></div>
+    <div class="field"><label>Description</label><input id="c_desc"/></div>
+  </div><div class="mf"><button class="btn grey" onclick="closeModal()">Cancel</button><button class="btn" onclick="createCategory()">Create</button></div>`);
+}
+
+async function createCategory() {
+  const { status, body } = await call("categoryManage", {
+    action: "create", name: ($("c_name") || {}).value, slug: ($("c_slug") || {}).value,
+    description: ($("c_desc") || {}).value, is_active: true
+  });
+  if (status === 201) { closeModal(); toast("Category created", "ok"); await loadAdmin(); }
+  else toast((body.error && body.error.message) || "Failed", "bad");
+}
+
+function newEndpoint() {
+  openModal(`<div class="mh">New endpoint · ${esc(state.adminSlug)}</div><div class="mb">
+    <div class="field"><label>Name</label><input id="e_name" placeholder="Resize image"/></div>
+    <div class="field"><label>Slug</label><input id="e_slug" placeholder="resize"/></div>
+    <div class="field"><label>Method</label><select id="e_method"><option>POST</option><option>GET</option></select></div>
+    <div class="field"><label>Path</label><input id="e_path" placeholder="/v1/image/resize"/></div>
+    <div class="field"><label>Handler key</label><input id="e_handler" placeholder="ai.chat"/></div>
+    <p class="hint">A handler must exist in the gateway registry, otherwise calls return 501.</p>
+  </div><div class="mf"><button class="btn grey" onclick="closeModal()">Cancel</button><button class="btn" onclick="createEndpoint()">Create</button></div>`);
+}
+
+async function createEndpoint() {
+  const { status, body } = await call("endpointManage", {
+    action: "create", api_slug: state.adminSlug,
+    name: ($("e_name") || {}).value, slug: ($("e_slug") || {}).value,
+    method: ($("e_method") || {}).value, path: ($("e_path") || {}).value,
+    handler_key: ($("e_handler") || {}).value, is_active: true
+  });
+  if (status === 201) { closeModal(); toast("Endpoint created", "ok"); await loadAdmin(); }
+  else toast((body.error && body.error.message) || "Failed", "bad");
+}
+
+/* ---------------- start ---------------- */
+boot();
 </script>
 </body>
 </html>

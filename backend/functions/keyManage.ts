@@ -1,7 +1,5 @@
 // @ts-nocheck
-// keyManage — API key lifecycle: create, list, revoke, regenerate.
-// Secrets are stored only as SHA-256 hashes. The full key is returned exactly once,
-// at creation/regeneration time, and is never retrievable afterwards.
+// keyManage — API key lifecycle. Branded "MR RIDUY AI" keys. SHA-256 hashes only; secret shown once.
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.54';
 
 const CORS = {
@@ -11,159 +9,159 @@ const CORS = {
   'Access-Control-Max-Age': '600',
 };
 
-function json(status, body) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json', ...CORS },
-  });
+const KEY_PREFIX = 'mr_riduy_ai_';
+
+function json(status: number, body: unknown) {
+  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...CORS } });
 }
-function err(status, code, message) {
+function err(status: number, code: string, message: string) {
   return json(status, { ok: false, error: { code, message } });
 }
-const toHex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
-async function sha256hex(value) {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
-  return toHex(new Uint8Array(digest));
+async function sha256hex(s: string) {
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(d)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+function newSecret() {
+  const b = new Uint8Array(24);
+  crypto.getRandomValues(b);
+  return KEY_PREFIX + Array.from(b).map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+function masked(record: any) {
+  return {
+    id: record.id,
+    name: record.name,
+    prefix: record.prefix,
+    last4: record.last4,
+    masked_key: KEY_PREFIX + '*'.repeat(20) + (record.last4 || ''),
+    label: 'MR RIDUY AI API',
+    status: record.status,
+    scopes: record.scopes || [],
+    api_slugs: record.api_slugs || [],
+    rate_limit_per_minute: record.rate_limit_per_minute,
+    daily_quota: record.daily_quota,
+    request_count: record.request_count || 0,
+    success_count: record.success_count || 0,
+    error_count: record.error_count || 0,
+    last_used_at: record.last_used_at || null,
+    expires_at: record.expires_at || null,
+    revoked_at: record.revoked_at || null,
+    created_date: record.created_date,
+  };
 }
 
-function masked(key) {
-  return {
-    id: key.id,
-    name: key.name,
-    prefix: key.prefix,
-    last4: key.last4,
-    masked_key: `${key.prefix}${'*'.repeat(20)}${key.last4 || ''}`,
-    status: key.status,
-    scopes: key.scopes || [],
-    api_slugs: key.api_slugs || [],
-    rate_limit_per_minute: key.rate_limit_per_minute,
-    daily_quota: key.daily_quota,
-    request_count: key.request_count || 0,
-    success_count: key.success_count || 0,
-    error_count: key.error_count || 0,
-    last_used_at: key.last_used_at || null,
-    expires_at: key.expires_at || null,
-    revoked_at: key.revoked_at || null,
-    created_date: key.created_date,
-  };
+async function auth(req: Request, base44: any) {
+  const raw = (req.headers.get('x-developer-token') || (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')).trim();
+  if (!raw) return { error: err(401, 'missing_token', 'X-Developer-Token header is required.') };
+  const found = await base44.asServiceRole.entities.DeveloperSession.filter({ token_hash: await sha256hex(raw) }, { limit: 1 });
+  const s = found.items[0];
+  if (!s) return { error: err(401, 'invalid_token', 'Session token is invalid.') };
+  if (s.revoked) return { error: err(401, 'token_revoked', 'Session token has been revoked.') };
+  if (new Date(s.expires_at).getTime() < Date.now()) return { error: err(401, 'token_expired', 'Session token has expired.') };
+  const pf = await base44.asServiceRole.entities.DeveloperProfile.filter({ email: s.developer_email }, { limit: 1 });
+  const dev = pf.items[0];
+  if (!dev) return { error: err(401, 'profile_missing', 'Developer profile not found.') };
+  if (dev.status !== 'active') return { error: err(403, 'account_suspended', 'This account is suspended.') };
+  return { dev, session: s };
 }
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   const base44 = createClientFromRequest(req);
+  const a = await auth(req, base44);
+  if (a.error) return a.error;
+  const dev = a.dev;
+
+  let input: any = {};
+  try { input = await req.json(); } catch (_) { input = {}; }
+  const action = String(input.action || 'list');
+
   try {
-    const raw = req.headers.get('x-developer-token')
-      || (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
-    if (!raw) return err(401, 'missing_token', 'X-Developer-Token header is required.');
-
-    const found = await base44.asServiceRole.entities.DeveloperSession.filter({ token_hash: await sha256hex(raw) }, { limit: 1 });
-    const session = found.items[0];
-    if (!session) return err(401, 'invalid_token', 'Session token is invalid.');
-    if (session.revoked) return err(401, 'token_revoked', 'Session token has been revoked.');
-    if (new Date(session.expires_at).getTime() < Date.now()) return err(401, 'token_expired', 'Session token has expired.');
-
-    const profileFound = await base44.asServiceRole.entities.DeveloperProfile.filter({ email: session.developer_email }, { limit: 1 });
-    const developer = profileFound.items[0];
-    if (!developer) return err(401, 'profile_missing', 'Developer profile no longer exists.');
-    if (developer.status !== 'active') return err(403, 'account_suspended', 'This account is suspended.');
-
-    const input = await req.json().catch(() => ({}));
-    const action = String(input.action || 'list');
-
     if (action === 'list') {
-      const keys = await base44.asServiceRole.entities.ApiKey.filter(
-        { developer_id: developer.id }, { sort: '-created_date', limit: 200 },
-      );
-      return json(200, { ok: true, data: { keys: keys.items.map(masked), count: keys.items.length } });
+      const page = await base44.asServiceRole.entities.ApiKey.filter({ developer_id: dev.id }, { sort: '-created_date', limit: 100 });
+      const keys = (page.items || []).map(masked);
+      return json(200, { ok: true, data: { keys, count: keys.length, label: 'MR RIDUY AI API' } });
     }
 
-    if (action === 'create' || action === 'regenerate') {
-      let name = String(input.name || '').trim().slice(0, 80);
-      let scopes = Array.isArray(input.scopes) ? input.scopes.map(String).slice(0, 20) : ['read'];
-      let apiSlugs = Array.isArray(input.api_slugs) ? input.api_slugs.map(String).slice(0, 50) : [];
-      let rateLimit = Number(input.rate_limit_per_minute) || developer.rate_limit_per_minute || 60;
-      let dailyQuota = Number(input.daily_quota) || developer.daily_quota || 10000;
-      let rotatedFrom = null;
+    if (action === 'create') {
+      const name = String(input.name || 'Default key').slice(0, 80);
+      const apiSlugs = Array.isArray(input.api_slugs) ? input.api_slugs.filter((x: any) => typeof x === 'string') : [];
+      const scopes = Array.isArray(input.scopes) && input.scopes.length ? input.scopes.filter((x: any) => typeof x === 'string') : ['read'];
+      const active = await base44.asServiceRole.entities.ApiKey.filter({ developer_id: dev.id, status: 'active' }, { limit: 100 });
+      if ((active.items || []).length >= 20) return err(400, 'key_limit_reached', 'You can hold at most 20 active keys.');
 
-      if (action === 'regenerate') {
-        const targetId = String(input.key_id || '');
-        if (!targetId) return err(400, 'missing_key_id', 'key_id is required for regenerate.');
-        const targetFound = await base44.asServiceRole.entities.ApiKey.filter({ id: targetId }, { limit: 1 });
-        const target = targetFound.items[0];
-        if (!target) return err(404, 'key_not_found', 'API key not found.');
-        if (target.developer_id !== developer.id) return err(403, 'forbidden', 'You do not own this API key.');
-        await base44.asServiceRole.entities.ApiKey.update(target.id, {
-          status: 'revoked', revoked_at: new Date().toISOString(),
-        });
-        rotatedFrom = target.id;
-        name = name || target.name || 'Regenerated key';
-        scopes = scopes && scopes.length ? scopes : (target.scopes || ['read']);
-        apiSlugs = apiSlugs && apiSlugs.length ? apiSlugs : (target.api_slugs || []);
-        rateLimit = Number(input.rate_limit_per_minute) || target.rate_limit_per_minute || rateLimit;
-        dailyQuota = Number(input.daily_quota) || target.daily_quota || dailyQuota;
-      }
-
-      if (!name) name = 'Default key';
-
-      // Enforce a sane ceiling on per-key limits so nobody self-issues unlimited access.
-      rateLimit = Math.max(1, Math.min(rateLimit, developer.rate_limit_per_minute || 60));
-      dailyQuota = Math.max(1, Math.min(dailyQuota, developer.daily_quota || 10000));
-
-      const activeKeys = await base44.asServiceRole.entities.ApiKey.filter(
-        { developer_id: developer.id, status: 'active' }, { limit: 100 },
-      );
-      if (activeKeys.items.length >= 20) {
-        return err(429, 'key_limit_reached', 'Maximum of 20 active API keys per account. Revoke a key first.');
-      }
-
-      const secret = toHex(crypto.getRandomValues(new Uint8Array(24)));
-      const fullKey = `sk_live_${secret}`;
-      const keyRecord = await base44.asServiceRole.entities.ApiKey.create({
-        developer_id: developer.id,
-        developer_email: developer.email,
+      const secret = newSecret();
+      const record = await base44.asServiceRole.entities.ApiKey.create({
+        developer_id: dev.id,
+        developer_email: dev.email,
         name,
-        prefix: 'sk_live_',
-        key_hash: await sha256hex(fullKey),
+        prefix: KEY_PREFIX,
+        key_hash: await sha256hex(secret),
         last4: secret.slice(-4),
         status: 'active',
         scopes,
         api_slugs: apiSlugs,
-        rate_limit_per_minute: rateLimit,
-        daily_quota: dailyQuota,
-        request_count: 0,
-        success_count: 0,
-        error_count: 0,
-        expires_at: input.expires_at ? String(input.expires_at) : null,
-        rotated_from: rotatedFrom,
+        rate_limit_per_minute: Math.max(1, Math.min(Number(input.rate_limit_per_minute) || dev.rate_limit_per_minute || 60, dev.rate_limit_per_minute || 60)),
+        daily_quota: Math.max(1, Math.min(Number(input.daily_quota) || dev.daily_quota || 10000, dev.daily_quota || 10000)),
+        request_count: 0, success_count: 0, error_count: 0,
       });
-
       return json(201, {
         ok: true,
         data: {
-          api_key: fullKey,
+          api_key: secret,
+          label: 'MR RIDUY AI API',
           warning: 'Store this key now. It is shown only once and cannot be retrieved again.',
-          key: masked(keyRecord),
-          rotated_from: rotatedFrom,
+          key: masked(record),
+          rotated_from: null,
         },
       });
     }
 
-    if (action === 'revoke') {
-      const targetId = String(input.key_id || '');
-      if (!targetId) return err(400, 'missing_key_id', 'key_id is required.');
-      const targetFound = await base44.asServiceRole.entities.ApiKey.filter({ id: targetId }, { limit: 1 });
-      const target = targetFound.items[0];
-      if (!target) return err(404, 'key_not_found', 'API key not found.');
-      if (target.developer_id !== developer.id) return err(403, 'forbidden', 'You do not own this API key.');
-      if (target.status === 'revoked') return err(409, 'already_revoked', 'This key is already revoked.');
-      const updated = await base44.asServiceRole.entities.ApiKey.update(target.id, {
-        status: 'revoked', revoked_at: new Date().toISOString(),
+    if (action === 'revoke' || action === 'regenerate') {
+      const id = String(input.key_id || input.id || '');
+      if (!id) return err(400, 'missing_parameter', 'key_id is required.');
+      const found = await base44.asServiceRole.entities.ApiKey.filter({ id }, { limit: 1 });
+      const existing = found.items[0];
+      if (!existing) return err(404, 'key_not_found', 'No such API key.');
+      if (existing.developer_id !== dev.id) return err(403, 'forbidden', 'That API key does not belong to your account.');
+
+      if (action === 'revoke') {
+        if (existing.status === 'revoked') {
+          return json(200, { ok: true, data: { key: masked(existing) } });
+        }
+        const updated = await base44.asServiceRole.entities.ApiKey.update(existing.id, { status: 'revoked', revoked_at: new Date().toISOString() });
+        return json(200, { ok: true, data: { key: masked(updated) } });
+      }
+
+      await base44.asServiceRole.entities.ApiKey.update(existing.id, { status: 'revoked', revoked_at: new Date().toISOString() });
+      const secret = newSecret();
+      const record = await base44.asServiceRole.entities.ApiKey.create({
+        developer_id: dev.id,
+        developer_email: dev.email,
+        name: existing.name,
+        prefix: KEY_PREFIX,
+        key_hash: await sha256hex(secret),
+        last4: secret.slice(-4),
+        status: 'active',
+        scopes: existing.scopes || ['read'],
+        api_slugs: existing.api_slugs || [],
+        rate_limit_per_minute: existing.rate_limit_per_minute,
+        daily_quota: existing.daily_quota,
+        request_count: 0, success_count: 0, error_count: 0,
       });
-      return json(200, { ok: true, data: { key: masked(updated) } });
+      return json(201, {
+        ok: true,
+        data: {
+          api_key: secret,
+          label: 'MR RIDUY AI API',
+          warning: 'The previous key was revoked. Store this new key now; it is shown only once.',
+          key: masked(record),
+          rotated_from: existing.id,
+        },
+      });
     }
 
-    return err(400, 'unknown_action', `Unknown action: ${action}`);
+    return err(400, 'unknown_action', 'action must be list, create, revoke or regenerate.');
   } catch (e) {
-    return err(500, 'internal_error', String(e && e.message ? e.message : e));
+    return err(500, 'internal_error', String((e as Error).message || e).slice(0, 300));
   }
 });

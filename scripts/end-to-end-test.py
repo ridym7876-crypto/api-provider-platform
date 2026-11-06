@@ -88,7 +88,7 @@ TOKEN_B, DEV_B, EMAIL_B = new_developer("beta")
 status, body = call("POST", "keyManage", {"action": "create", "name": "primary"}, {"X-Developer-Token": TOKEN_A})
 KEY_MAIN = body["data"]["api_key"]
 KEY_MAIN_ID = body["data"]["key"]["id"]
-check("key creation returns the secret exactly once", status == 201 and KEY_MAIN.startswith("sk_live_"), (status, body.get("error")))
+check("key creation returns the secret exactly once", status == 201 and KEY_MAIN.startswith("mr_riduy_ai_"), (status, body.get("error")))
 
 status, body = call("POST", "keyManage", {"action": "list"}, {"X-Developer-Token": TOKEN_A})
 listed = body["data"]["keys"][0]

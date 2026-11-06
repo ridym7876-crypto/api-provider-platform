@@ -1,4 +1,6 @@
-# API Provider Platform — Phase 1
+# MR RIDUY AI API — AI API Platform
+
+Branded AI API platform: users sign up, generate a `mr_riduy_ai_…` key, and call AI endpoints (chat, summarise, translate, sentiment, classify, keywords) from any website, app or game.
 
 A complete, working API provider platform: a public API gateway with hashed API keys,
 server-side rate limiting, usage analytics, request history, generated documentation and a

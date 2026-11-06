@@ -22,7 +22,7 @@
 
 ## 2. Tested successfully
 
-`scripts/end-to-end-test.py` — 62 assertions, all passing. Coverage:
+`scripts/end-to-end-test.py` — 76 assertions, all passing. Coverage:
 
 - Public catalog and per-API documentation for all five APIs.
 - All 11 endpoints returning correct computed values (verified against known digests,
@@ -39,8 +39,13 @@
 - Session lifecycle: logout revokes, revoked and forged tokens rejected, wrong password
   rejected.
 
-`scripts/regression-test.py` — focused re-checks for the four defects found during testing
-(query-parameter routing, durable rate limiting, slug-vs-id catalog lookup, deactivate path).
+Browser verification of the deployed portal (GitHub Pages) confirmed: catalog rendering from
+the live backend, developer registration, key generation with one-time reveal, playground
+round trip through the real gateway, usage analytics, request history, generated
+documentation and the admin console with working catalog actions.
+
+The suite is self-contained: it registers its own accounts and keys on every run, so it is
+idempotent and can be re-run at any time.
 
 ## 3. Defects found and fixed during testing
 
@@ -50,6 +55,7 @@
 | Handlers rejected valid parameters | Dispatcher passed the request envelope instead of the inner payload | Payload builder that merges body, params and flattened keys |
 | Rate limit not enforced | In-memory counters are per serverless isolate | Durable per-key minute/day counter record, with memory as a burst shed |
 | Catalog mutations failed with "id is not a valid record ID" | Lookup tried `id` with a slug value | Only query `id` when the value matches a record-id pattern, otherwise query `slug` |
+| Portal "Sign in" opened the registration tab | Auth tab state persisted across visits | Explicit `openAuth(tab)` entry points and tab reset on logout/login |
 
 ## 4. Remaining limitations
 

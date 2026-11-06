@@ -123,14 +123,21 @@ Error codes are stable and machine readable: `missing_api_key`, `invalid_api_key
 Every handler computes a real result from real input. There are no hardcoded or simulated
 responses anywhere in the data plane.
 
-## Local verification
+## Verification
 
 ```bash
-python3 scripts/end-to-end-test.py    # 62 assertions against the live deployment
-python3 scripts/regression-test.py    # focused checks for previously fixed defects
+# 76 assertions against the live deployment. Creates its own throwaway
+# developer accounts and keys, so it is idempotent and safe to re-run.
+python3 scripts/end-to-end-test.py
+
+# Admin-only assertions (catalog CRUD, activate/deactivate) need an admin login:
+export ADMIN_EMAIL=you@example.com
+export ADMIN_PASSWORD='...'
+python3 scripts/end-to-end-test.py
 ```
 
-Both scripts exercise the live backend. They create throwaway developer accounts and keys.
+Without those env vars the admin block is skipped and everything else still runs.
+Exit code is 0 only when every assertion passes.
 
 ## Adding your own APIs (Phase 2 hook)
 

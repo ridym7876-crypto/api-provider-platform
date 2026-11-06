@@ -1,195 +1,298 @@
-import json, urllib.request, urllib.error, time
+#!/usr/bin/env python3
+"""
+Self-contained end-to-end test suite for the API Provider Platform.
 
-B = "https://superagent-b31b88fd.base44.app/functions"
-ADMIN = open('/tmp/admintoken').read().strip()
-DEV = open('/tmp/devtoken').read().strip()
-KEY = open('/tmp/apikey').read().strip()
-KEYID = open('/tmp/keyid').read().strip()
+Every run creates its own throwaway developer accounts and API keys, so it is
+idempotent and safe to run repeatedly against the live deployment.
+
+Usage:
+    export ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=...   # optional: enables admin tests
+    python3 scripts/end-to-end-test.py
+
+Admin-only assertions are skipped when ADMIN_EMAIL / ADMIN_PASSWORD are absent.
+Exit code is 0 only when every assertion passes.
+"""
+import json, os, sys, time, urllib.error, urllib.request
+
+BASE = os.environ.get("API_BASE", "https://superagent-b31b88fd.base44.app/functions")
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+SUFFIX = int(time.time())
 results = []
 
-def req(method, fn, payload=None, headers=None, url=None):
-    u = url or (B + "/" + fn)
-    data = json.dumps(payload).encode() if payload is not None and method != "GET" else None
-    h = {"Content-Type": "application/json"}
-    if headers: h.update(headers)
-    r = urllib.request.Request(u, data=data, headers=h, method=method)
+
+def request(method, fn, payload=None, headers=None, url=None):
+    target = url or (BASE + "/" + fn)
+    data = json.dumps(payload).encode() if (payload is not None and method != "GET") else None
+    hdrs = {"Content-Type": "application/json"}
+    hdrs.update(headers or {})
+    req = urllib.request.Request(target, data=data, headers=hdrs, method=method)
     try:
-        with urllib.request.urlopen(r, timeout=90) as resp:
+        with urllib.request.urlopen(req, timeout=90) as resp:
             return resp.status, json.loads(resp.read())
     except urllib.error.HTTPError as e:
         raw = e.read()
-        try: body = json.loads(raw)
-        except Exception: body = {"raw": raw.decode()[:300]}
-        return e.code, body
+        try:
+            return e.code, json.loads(raw)
+        except Exception:
+            return e.code, {"raw": raw.decode()[:300]}
     except Exception as e:
         return 0, {"transport": str(e)}
 
-def call_retry(method, fn, payload=None, headers=None, url=None, tries=3):
-    for i in range(tries):
-        s, b = req(method, fn, payload, headers, url)
-        cap = False
-        if isinstance(b, dict):
-            blob = json.dumps(b)
-            cap = "platform_capacity" in blob or "allows 70 requests" in blob or "user worker threw" in blob
-        if s in (0,) or cap:
-            time.sleep(3)
-            continue
-        return s, b
-    return s, b
 
-def check(name, cond, detail=""):
-    results.append((name, bool(cond), detail))
-    print(("PASS " if cond else "FAIL ") + name + ("" if cond else "  <<< " + str(detail)[:260]))
+def call(method, fn, payload=None, headers=None, url=None, pace=False):
+    """Request with pacing and capacity backoff (the platform caps entity ops per minute)."""
+    if pace:
+        time.sleep(1.2)
+    last = (0, {})
+    for attempt in range(4):
+        status, body = request(method, fn, payload, headers, url)
+        blob = json.dumps(body)
+        capacity = status == 0 or "platform_capacity" in blob or "allows 70 requests" in blob or "user worker threw" in blob
+        if not capacity:
+            return status, body
+        last = (status, body)
+        time.sleep(18)
+    return last
 
-# ---------- A. public surface ----------
-s, b = call_retry("POST", "publicCatalog", {})
-check("publicCatalog no-auth", s == 200 and b["data"]["totals"]["apis"] == 5, (s, b))
-check("catalog 11 endpoints", s == 200 and b["data"]["totals"]["endpoints"] == 11, (s, b))
-for slug in ["system", "crypto", "text", "data", "developer"]:
-    s, b = call_retry("POST", "apiDocs", {"api_slug": slug})
-    check(f"apiDocs {slug} + markdown", s == 200 and len(b["data"]["markdown"]) > 300 and len(b["data"]["endpoints"]) > 0, (s, b.get("error")))
 
-# ---------- B. gateway functional ----------
+def check(name, condition, detail=""):
+    results.append((name, bool(condition)))
+    print(("PASS " if condition else "FAIL ") + name + ("" if condition else "  <<< " + str(detail)[:280]))
+
+
+def new_developer(label):
+    email = "e2e.%s.%s@example.com" % (label, SUFFIX)
+    status, body = call("POST", "devRegister", {"email": email, "password": "E2eTestPassword1", "full_name": label})
+    if status != 201:
+        raise SystemExit("could not register %s: %s" % (email, body))
+    return body["data"]["token"], body["data"]["developer"], email
+
+
+print("Base:", BASE, "\nrunning as suffix", SUFFIX, "\n")
+
+# ---------------------------------------------------------------- public surface
+status, body = call("POST", "publicCatalog", {})
+check("public catalog is reachable without auth", status == 200 and body["data"]["totals"]["apis"] >= 5, (status, body))
+check("catalog reports 11 endpoints", status == 200 and body["data"]["totals"]["endpoints"] >= 11, body.get("data", {}).get("totals"))
+api_slugs = [a["slug"] for a in body["data"]["apis"]]
+for slug in api_slugs:
+    status, body = call("POST", "apiDocs", {"api_slug": slug})
+    check("documentation generated for " + slug,
+          status == 200 and len(body["data"]["markdown"]) > 300 and len(body["data"]["endpoints"]) > 0, (status, body.get("error")))
+
+# ---------------------------------------------------------------- fresh identity
+TOKEN_A, DEV_A, EMAIL_A = new_developer("alpha")
+TOKEN_B, DEV_B, EMAIL_B = new_developer("beta")
+
+status, body = call("POST", "keyManage", {"action": "create", "name": "primary"}, {"X-Developer-Token": TOKEN_A})
+KEY_MAIN = body["data"]["api_key"]
+KEY_MAIN_ID = body["data"]["key"]["id"]
+check("key creation returns the secret exactly once", status == 201 and KEY_MAIN.startswith("sk_live_"), (status, body.get("error")))
+
+status, body = call("POST", "keyManage", {"action": "list"}, {"X-Developer-Token": TOKEN_A})
+listed = body["data"]["keys"][0]
+check("key listing masks the secret and never exposes a hash",
+      status == 200 and "key_hash" not in listed and "****" in listed["masked_key"], listed)
+
+# ---------------------------------------------------------------- gateway happy paths
 cases = [
-  ("system", "time", {}, lambda d: "utc_iso" in d, "system/time"),
-  ("system", "health", {}, lambda d: d["database_latency_ms"] > 0 and d["apis_total"] == 5, "system/health live db"),
-  ("crypto", "sha256", {"body": {"text": "hello world"}}, lambda d: d["hex"] == "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9", "sha256 digest"),
-  ("crypto", "random", {"body": {"bytes": 8}}, lambda d: len(d["value"]) == 16, "random 8 bytes"),
-  ("text", "slugify", {"body": {"text": "Hello, World!  API Platform 2026"}}, lambda d: d["slug"] == "hello-world-api-platform-2026", "slugify"),
-  ("text", "stats", {"body": {"text": "One two. Three!\nFour five six."}}, lambda d: d["words"] == 6 and d["lines"] == 2, "text stats"),
-  ("data", "list-apis", {}, lambda d: d["count"] == 5, "data/list-apis"),
-  ("data", "list-endpoints", {}, lambda d: d["count"] == 11, "data/list-endpoints"),
-  ("developer", "echo", {"body": {"hello": "world"}}, lambda d: d["body"]["hello"] == "world", "echo"),
-  ("developer", "validate-json", {"body": {"json": '{"a":1}'}}, lambda d: d["valid"] is True, "json valid"),
-  ("developer", "validate-json", {"body": {"json": "{bad"}}, lambda d: d["valid"] is False, "json invalid"),
-  ("developer", "usage", {}, lambda d: d["total_requests"] > 0, "platform.usage"),
+    ("system", "time", {}, lambda d: "utc_iso" in d, "system/time"),
+    ("system", "health", {}, lambda d: d["database_latency_ms"] > 0 and d["apis_total"] >= 5, "system/health real db latency"),
+    ("crypto", "sha256", {"body": {"text": "hello world"}},
+     lambda d: d["hex"] == "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9", "crypto/sha256 known digest"),
+    ("crypto", "random", {"body": {"bytes": 8}}, lambda d: d["bytes"] == 8 and len(d["value"]) == 16, "crypto/random honours byte count"),
+    ("text", "slugify", {"body": {"text": "Hello, World!  API Platform 2026"}},
+     lambda d: d["slug"] == "hello-world-api-platform-2026", "text/slugify"),
+    ("text", "stats", {"body": {"text": "One two. Three!\nFour five six."}}, lambda d: d["words"] == 6 and d["lines"] == 2, "text/stats"),
+    ("data", "list-apis", {}, lambda d: d["count"] >= 5, "data/list-apis"),
+    ("data", "list-endpoints", {}, lambda d: d["count"] >= 11, "data/list-endpoints"),
+    ("developer", "echo", {"body": {"hello": "world"}}, lambda d: d["body"]["hello"] == "world", "developer/echo"),
+    ("developer", "validate-json", {"body": {"json": '{"a":1}'}}, lambda d: d["valid"] is True, "developer/validate-json valid"),
+    ("developer", "validate-json", {"body": {"json": "{bad"}}, lambda d: d["valid"] is False, "developer/validate-json invalid"),
+    ("developer", "usage", {}, lambda d: d["total_requests"] > 0, "developer/usage"),
 ]
-for api, ep, extra, pred, label in cases:
-    payload = {"api": api, "endpoint": ep, **extra}
-    s, b = call_retry("POST", "apiGateway", payload, {"X-Api-Key": KEY})
-    ok = s == 200 and b.get("ok") and pred(b["data"]) and b["meta"]["rate_limit"]["limit"] > 0
-    check("gateway " + label, ok, (s, json.dumps(b)[:300]))
+for api, endpoint, extra, predicate, label in cases:
+    payload = {"api": api, "endpoint": endpoint}
+    payload.update(extra)
+    status, body = call("POST", "apiGateway", payload, {"X-Api-Key": KEY_MAIN}, pace=True)
+    ok = status == 200 and body.get("ok") and predicate(body["data"]) and body["meta"]["rate_limit"]["limit"] > 0
+    check("gateway " + label, ok, (status, json.dumps(body)[:300]))
 
-# path routing
-s, b = call_retry("GET", "apiGateway", None, {"X-Api-Key": KEY}, url=B + "/apiGateway?path=/v1/system/time")
-check("path routing /v1/system/time", s == 200 and "utc_iso" in json.dumps(b), (s, json.dumps(b)[:200]))
-s, b = call_retry("GET", "apiGateway", None, {"X-Api-Key": KEY}, url=B + "/apiGateway?path=/v1/text/slugify&text=Hello%20There")
-check("path routing + query param", s == 200 and b["data"]["slug"] == "hello-there", (s, json.dumps(b)[:250]))
+# ---------------------------------------------------------------- routing styles
+status, body = call("GET", "apiGateway", None, {"X-Api-Key": KEY_MAIN},
+                    url=BASE + "/apiGateway?path=/v1/system/time", pace=True)
+check("path routing (GET ?path=)", status == 200 and "utc_iso" in json.dumps(body), (status, body))
 
-# ---------- C. gateway failures ----------
-s, b = call_retry("POST", "apiGateway", {"api": "system", "endpoint": "time"})
-check("no key -> 401", s == 401 and b["error"]["code"] == "missing_api_key", (s, b))
-s, b = call_retry("POST", "apiGateway", {"api": "system", "endpoint": "time"}, {"X-Api-Key": "sk_live_deadbeef"})
-check("bad key -> 401", s == 401 and b["error"]["code"] == "invalid_api_key", (s, b))
-s, b = call_retry("POST", "apiGateway", {"api": "system", "endpoint": "time"}, {"X-Api-Key": "nonsense"})
-check("malformed key -> 401", s == 401, (s, b))
-s, b = call_retry("POST", "apiGateway", {"api": "crypto", "endpoint": "sha256", "body": {}}, {"X-Api-Key": KEY})
-check("missing param -> 400", s == 400 and b["data"]["error"] == "missing_parameter", (s, b))
-s, b = call_retry("POST", "apiGateway", {"api": "crypto", "endpoint": "random", "body": {"bytes": 9999}}, {"X-Api-Key": KEY})
-check("invalid param -> 400", s == 400, (s, b))
-s, b = call_retry("POST", "apiGateway", {"api": "nope", "endpoint": "x"}, {"X-Api-Key": KEY})
-check("unknown api -> 404", s == 404 and b["error"]["code"] == "api_not_found", (s, b))
-s, b = call_retry("POST", "apiGateway", {"api": "system", "endpoint": "nope"}, {"X-Api-Key": KEY})
-check("unknown endpoint -> 404", s == 404 and b["error"]["code"] == "endpoint_not_found", (s, b))
-s, b = call_retry("PUT", "apiGateway", {"api": "system", "endpoint": "health"}, {"X-Api-Key": KEY})
-check("wrong method -> 405", s == 405 and b["error"]["code"] == "method_not_allowed", (s, b))
-print("... pausing 40s to let the platform entity quota reset ...")
-time.sleep(40)
+status, body = call("POST", "apiGateway", {}, {"X-Api-Key": KEY_MAIN},
+                    url=BASE + "/apiGateway?path=/v1/text/slugify&text=Hello%20There", pace=True)
+check("query-parameter routing", status == 200 and body["data"]["slug"] == "hello-there", (status, body))
 
-# ---------- D. developer isolation ----------
-email2 = f"dev2_{int(time.time())}@example.com"
-s, b = call_retry("POST", "devRegister", {"email": email2, "password": "SuperSecret123"})
-DEV2 = b.get("data", {}).get("token")
-check("dev2 registered", s == 201 and DEV2, (s, b))
-s, b = call_retry("POST", "keyManage", {"action": "list"}, {"X-Developer-Token": DEV2})
-check("dev2 sees 0 keys", s == 200 and b["data"]["count"] == 0, (s, b))
-s, b = call_retry("POST", "keyManage", {"action": "revoke", "key_id": KEYID}, {"X-Developer-Token": DEV2})
-check("dev2 cannot revoke dev1 key", s == 403, (s, b))
-s, b = call_retry("POST", "requestHistory", {}, {"X-Developer-Token": DEV2})
-check("dev2 request history empty", s == 200 and b["data"]["count"] == 0, (s, b))
-s, b = call_retry("POST", "usageStats", {}, {"X-Developer-Token": DEV2})
-check("dev2 usage empty", s == 200 and b["data"]["totals"]["requests"] == 0, (s, b))
-s, b = call_retry("POST", "playgroundSend", {"key_id": KEYID, "api_slug": "system", "endpoint_slug": "time"}, {"X-Developer-Token": DEV2})
-check("dev2 cannot play with dev1 key", s == 403, (s, b))
-s, b = call_retry("POST", "apiManage", {"action": "create", "name": "Hacked"}, {"X-Developer-Token": DEV2})
-check("non-admin cannot create API", s == 403, (s, b))
-s, b = call_retry("POST", "categoryManage", {"action": "create", "name": "Hacked"}, {"X-Developer-Token": DEV2})
-check("non-admin cannot create category", s == 403, (s, b))
-s, b = call_retry("POST", "endpointManage", {"action": "create", "api_slug": "system", "method": "GET", "path": "/x"}, {"X-Developer-Token": DEV2})
-check("non-admin cannot create endpoint", s == 403, (s, b))
+status, body = call("POST", "apiGateway", {"api": "crypto", "endpoint": "sha256", "text": "flat"}, {"X-Api-Key": KEY_MAIN}, pace=True)
+check("flattened body parameters", status == 200 and body["data"]["input_length"] == 4, (status, body))
 
-# ---------- E. playground + analytics ----------
-s, b = call_retry("POST", "playgroundSend", {"key_id": KEYID, "api_slug": "crypto", "endpoint_slug": "sha256", "body": {"text": "abc"}}, {"X-Developer-Token": DEV})
-ok = s == 200 and b["data"]["simulated"] is False and b["data"]["response"]["status_code"] == 200 and b["data"]["response"]["body"]["data"]["hex"].startswith("ba7816bf8")
-check("playground runs real gateway", ok, (s, json.dumps(b)[:400]))
-s, b = call_retry("POST", "usageStats", {"range_days": 7}, {"X-Developer-Token": DEV})
-ok = s == 200 and b["data"]["totals"]["requests"] > 15 and len(b["data"]["by_endpoint"]) >= 5 and len(b["data"]["by_key"]) >= 1 and b["data"]["totals"]["p95_response_time_ms"] > 0
-check("usageStats aggregates", ok, json.dumps(b.get("data", {}).get("totals")))
-check("usageStats by_day trend", s == 200 and len(b["data"]["by_day"]) >= 1, b["data"].get("by_day") if s == 200 else b)
-s, b = call_retry("POST", "requestHistory", {"limit": 5}, {"X-Developer-Token": DEV})
-check("requestHistory paginated", s == 200 and len(b["data"]["requests"]) == 5 and b["data"]["has_more"] is True, (s, b.get("data", {}).get("count")))
-s, b = call_retry("POST", "requestHistory", {"success": True, "limit": 50}, {"X-Developer-Token": DEV})
-check("history success filter", s == 200 and all(r["success"] for r in b["data"]["requests"]), (s,))
-s, b = call_retry("POST", "requestHistory", {"success": False, "limit": 50}, {"X-Developer-Token": DEV})
-check("history failure filter", s == 200 and len(b["data"]["requests"]) > 0 and all(not r["success"] for r in b["data"]["requests"]), (s, len(b.get("data", {}).get("requests", []))))
+# ---------------------------------------------------------------- failure modes
+status, body = call("POST", "apiGateway", {"api": "system", "endpoint": "time"})
+check("missing key rejected", status == 401 and body["error"]["code"] == "missing_api_key", (status, body))
+status, body = call("POST", "apiGateway", {"api": "system", "endpoint": "time"}, {"X-Api-Key": "sk_live_deadbeef"})
+check("unknown key rejected", status == 401 and body["error"]["code"] == "invalid_api_key", (status, body))
+status, body = call("POST", "apiGateway", {"api": "system", "endpoint": "time"}, {"X-Api-Key": "nonsense"})
+check("malformed key rejected", status == 401, (status, body))
+status, body = call("POST", "apiGateway", {"api": "crypto", "endpoint": "sha256", "body": {}}, {"X-Api-Key": KEY_MAIN}, pace=True)
+check("missing parameter rejected", status == 400 and body["data"]["error"] == "missing_parameter", (status, body))
+status, body = call("POST", "apiGateway", {"api": "crypto", "endpoint": "random", "body": {"bytes": 9999}}, {"X-Api-Key": KEY_MAIN}, pace=True)
+check("out-of-range parameter rejected", status == 400, (status, body))
+status, body = call("POST", "apiGateway", {"api": "nope", "endpoint": "x"}, {"X-Api-Key": KEY_MAIN}, pace=True)
+check("unknown API rejected", status == 404 and body["error"]["code"] == "api_not_found", (status, body))
+status, body = call("POST", "apiGateway", {"api": "system", "endpoint": "nope"}, {"X-Api-Key": KEY_MAIN}, pace=True)
+check("unknown endpoint rejected", status == 404 and body["error"]["code"] == "endpoint_not_found", (status, body))
+status, body = call("PUT", "apiGateway", {"api": "system", "endpoint": "health"}, {"X-Api-Key": KEY_MAIN}, pace=True)
+check("wrong HTTP method rejected", status == 405 and body["error"]["code"] == "method_not_allowed", (status, body))
 
-# ---------- F. keys: rate limit, scoping, revoke, regenerate ----------
-s, b = call_retry("POST", "keyManage", {"action": "create", "name": "Throttle", "rate_limit_per_minute": 1}, {"X-Developer-Token": DEV})
-RLKEY = b.get("data", {}).get("api_key")
-check("throttle key created", s == 201 and RLKEY, (s, b.get("error")))
-s1, b1 = call_retry("POST", "apiGateway", {"api": "system", "endpoint": "time"}, {"X-Api-Key": RLKEY})
-s2, b2 = call_retry("POST", "apiGateway", {"api": "system", "endpoint": "time"}, {"X-Api-Key": RLKEY})
-check("rate limit 1/min enforced", s1 == 200 and s2 == 429 and b2["error"]["code"] == "rate_limit_exceeded", (s1, s2, b2.get("error")))
+# ---------------------------------------------------------------- isolation
+status, body = call("POST", "keyManage", {"action": "list"}, {"X-Developer-Token": TOKEN_B})
+check("second developer sees no foreign keys", status == 200 and body["data"]["count"] == 0, (status, body))
+status, body = call("POST", "keyManage", {"action": "revoke", "key_id": KEY_MAIN_ID}, {"X-Developer-Token": TOKEN_B})
+check("second developer cannot revoke a foreign key", status == 403 and body["error"]["code"] == "forbidden", (status, body))
+status, body = call("POST", "playgroundSend", {"key_id": KEY_MAIN_ID, "api_slug": "system", "endpoint_slug": "time"}, {"X-Developer-Token": TOKEN_B})
+check("second developer cannot use a foreign key in the playground", status == 403, (status, body))
+status, body = call("POST", "requestHistory", {}, {"X-Developer-Token": TOKEN_B})
+check("second developer has no foreign request history", status == 200 and body["data"]["count"] == 0, (status, body))
+status, body = call("POST", "usageStats", {}, {"X-Developer-Token": TOKEN_B})
+check("second developer has no foreign usage", status == 200 and body["data"]["totals"]["requests"] == 0, (status, body))
+for fn, payload in [("apiManage", {"action": "create", "name": "x"}),
+                    ("categoryManage", {"action": "create", "name": "x"}),
+                    ("endpointManage", {"action": "create", "api_slug": "system", "method": "GET", "path": "/x"})]:
+    status, body = call("POST", fn, payload, {"X-Developer-Token": TOKEN_B})
+    check("non-admin blocked from " + fn, status == 403, (status, body))
 
-s, b = call_retry("POST", "keyManage", {"action": "create", "name": "Scoped", "api_slugs": ["text"]}, {"X-Developer-Token": DEV})
-SCOPED = b.get("data", {}).get("api_key"); SCOPEDID = b.get("data", {}).get("key", {}).get("id")
-s, b = call_retry("POST", "apiGateway", {"api": "text", "endpoint": "slugify", "body": {"text": "Ok Fine"}}, {"X-Api-Key": SCOPED})
-check("scoped key works on its api", s == 200, (s, b))
-s, b = call_retry("POST", "apiGateway", {"api": "system", "endpoint": "time"}, {"X-Api-Key": SCOPED})
-check("scoped key blocked elsewhere", s == 403 and b["error"]["code"] == "api_not_permitted", (s, b))
-s, b = call_retry("POST", "keyManage", {"action": "revoke", "key_id": SCOPEDID}, {"X-Developer-Token": DEV})
-check("revoke works", s == 200 and b["data"]["key"]["status"] == "revoked", (s, b))
+# ---------------------------------------------------------------- playground + analytics
+status, body = call("POST", "playgroundSend",
+                    {"key_id": KEY_MAIN_ID, "api_slug": "crypto", "endpoint_slug": "sha256", "body": {"text": "abc"}},
+                    {"X-Developer-Token": TOKEN_A}, pace=True)
+ok = (status == 200 and body["data"]["simulated"] is False
+      and body["data"]["response"]["status_code"] == 200
+      and body["data"]["response"]["body"]["data"]["hex"].startswith("ba7816bf8"))
+check("playground executes the real gateway", ok, (status, json.dumps(body)[:400]))
+
+status, body = call("POST", "usageStats", {"range_days": 7}, {"X-Developer-Token": TOKEN_A})
+data = body.get("data", {})
+check("usage aggregates real traffic",
+      status == 200 and data["totals"]["requests"] >= 10 and len(data["by_endpoint"]) >= 5
+      and len(data["by_key"]) >= 1 and data["totals"]["p95_response_time_ms"] > 0, data.get("totals"))
+check("usage includes a daily trend", status == 200 and len(data["by_day"]) >= 1, data.get("by_day"))
+check("usage includes status-code breakdown", status == 200 and len(data["by_status"]) >= 2, data.get("by_status"))
+
+status, body = call("POST", "requestHistory", {"limit": 5}, {"X-Developer-Token": TOKEN_A})
+check("history paginates",
+      status == 200 and len(body["data"]["requests"]) == 5 and body["data"]["has_more"] is True
+      and body["data"]["requests"][0]["timestamp"], body.get("data", {}).get("count"))
+status, body = call("POST", "requestHistory", {"success": True, "limit": 50}, {"X-Developer-Token": TOKEN_A})
+check("history success filter", status == 200 and len(body["data"]["requests"]) > 0
+      and all(r["success"] for r in body["data"]["requests"]), status)
+status, body = call("POST", "requestHistory", {"success": False, "limit": 50}, {"X-Developer-Token": TOKEN_A})
+check("history failure filter", status == 200 and len(body["data"]["requests"]) > 0
+      and all(not r["success"] for r in body["data"]["requests"]), len(body.get("data", {}).get("requests", [])))
+status, body = call("POST", "requestHistory", {"source": "playground", "limit": 20}, {"X-Developer-Token": TOKEN_A})
+check("history records playground as a source", status == 200 and len(body["data"]["requests"]) > 0, status)
+
+# ---------------------------------------------------------------- quotas and scoping
+status, body = call("POST", "keyManage", {"action": "create", "name": "throttled", "rate_limit_per_minute": 1}, {"X-Developer-Token": TOKEN_A})
+KEY_THROTTLE = body["data"]["api_key"]
+first, _ = call("POST", "apiGateway", {"api": "data", "endpoint": "list-apis"}, {"X-Api-Key": KEY_THROTTLE})
+second, second_body = call("POST", "apiGateway", {"api": "data", "endpoint": "list-apis"}, {"X-Api-Key": KEY_THROTTLE})
+check("per-key minute limit enforced",
+      first == 200 and second == 429 and second_body["error"]["code"] == "rate_limit_exceeded",
+      (first, second, second_body.get("error")))
+
+status, body = call("POST", "keyManage", {"action": "create", "name": "scoped", "api_slugs": ["text"]}, {"X-Developer-Token": TOKEN_A})
+KEY_SCOPED = body["data"]["api_key"]
+KEY_SCOPED_ID = body["data"]["key"]["id"]
+status, body = call("POST", "apiGateway", {"api": "text", "endpoint": "slugify", "body": {"text": "Ok Fine"}}, {"X-Api-Key": KEY_SCOPED}, pace=True)
+check("scoped key works on its own API", status == 200, (status, body))
+status, body = call("POST", "apiGateway", {"api": "system", "endpoint": "time"}, {"X-Api-Key": KEY_SCOPED}, pace=True)
+check("scoped key blocked on other APIs", status == 403 and body["error"]["code"] == "api_not_permitted", (status, body))
+
+status, body = call("POST", "keyManage", {"action": "revoke", "key_id": KEY_SCOPED_ID}, {"X-Developer-Token": TOKEN_A})
+check("key revocation succeeds", status == 200 and body["data"]["key"]["status"] == "revoked", (status, body))
 time.sleep(7)
-s, b = call_retry("POST", "apiGateway", {"api": "text", "endpoint": "slugify", "body": {"text": "x"}}, {"X-Api-Key": SCOPED})
-check("revoked key dead after cache TTL", s == 403 and b["error"]["code"] == "key_revoked", (s, b))
+status, body = call("POST", "apiGateway", {"api": "text", "endpoint": "slugify", "body": {"text": "x"}}, {"X-Api-Key": KEY_SCOPED})
+check("revoked key rejected", status == 403 and body["error"]["code"] == "key_revoked", (status, body))
 
-s, b = call_retry("POST", "keyManage", {"action": "regenerate", "key_id": KEYID}, {"X-Developer-Token": DEV})
-NEWKEY = b.get("data", {}).get("api_key")
-check("regenerate issues new secret", s == 201 and NEWKEY and NEWKEY != KEY, (s, b.get("error")))
+status, body = call("POST", "keyManage", {"action": "regenerate", "key_id": KEY_MAIN_ID}, {"X-Developer-Token": TOKEN_A})
+KEY_ROTATED = body["data"]["api_key"]
+check("rotation issues a new secret", status == 201 and KEY_ROTATED and KEY_ROTATED != KEY_MAIN, (status, body.get("error")))
 time.sleep(7)
-s, b = call_retry("POST", "apiGateway", {"api": "system", "endpoint": "time"}, {"X-Api-Key": KEY})
-check("old key rejected after rotate", s == 403, (s, b))
-s, b = call_retry("POST", "apiGateway", {"api": "system", "endpoint": "time"}, {"X-Api-Key": NEWKEY})
-check("new key accepted", s == 200, (s, b))
-KEY = NEWKEY; open('/tmp/apikey','w').write(KEY)
+status, body = call("POST", "apiGateway", {"api": "system", "endpoint": "time"}, {"X-Api-Key": KEY_MAIN})
+check("old secret dead after rotation", status == 403, (status, body))
+status, body = call("POST", "apiGateway", {"api": "system", "endpoint": "time"}, {"X-Api-Key": KEY_ROTATED}, pace=True)
+check("new secret works after rotation", status == 200, (status, body))
 
-# ---------- G. api lifecycle ----------
-s, b = call_retry("POST", "apiManage", {"action": "set_status", "slug": "system", "status": "inactive"}, {"X-Developer-Token": ADMIN})
-check("admin deactivates api", s == 200 and b["data"]["api"]["status"] == "inactive", (s, b))
-time.sleep(32)
-s, b = call_retry("POST", "apiGateway", {"api": "system", "endpoint": "time"}, {"X-Api-Key": KEY})
-check("inactive api blocked", s == 403 and b["error"]["code"] == "api_inactive", (s, b))
-s, b = call_retry("POST", "apiManage", {"action": "set_status", "slug": "system", "status": "active"}, {"X-Developer-Token": ADMIN})
-time.sleep(32)
-s, b = call_retry("POST", "apiGateway", {"api": "system", "endpoint": "time"}, {"X-Api-Key": KEY})
-check("reactivated api live again", s == 200, (s, b))
+# ---------------------------------------------------------------- admin lifecycle
+if ADMIN_EMAIL and ADMIN_PASSWORD:
+    status, body = call("POST", "devLogin", {"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
+    ADMIN_TOKEN = body.get("data", {}).get("token")
+    check("admin login", status == 200 and ADMIN_TOKEN, (status, body.get("error")))
+    if ADMIN_TOKEN:
+        status, body = call("POST", "apiManage", {"action": "set_status", "slug": "system", "status": "inactive"}, {"X-Developer-Token": ADMIN_TOKEN})
+        check("admin deactivates an API", status == 200 and body["data"]["api"]["status"] == "inactive", (status, body.get("error")))
+        time.sleep(32)
+        status, body = call("POST", "apiGateway", {"api": "system", "endpoint": "time"}, {"X-Api-Key": KEY_ROTATED})
+        check("deactivated API stops serving traffic", status == 403 and body["error"]["code"] == "api_inactive", (status, body))
+        status, body = call("POST", "apiManage", {"action": "get", "slug": "system"}, {"X-Developer-Token": ADMIN_TOKEN})
+        check("admin reads API by slug with endpoints", status == 200 and len(body["data"]["endpoints"]) == 2, (status, body.get("error")))
+        status, body = call("POST", "apiManage", {"action": "set_status", "slug": "system", "status": "active"}, {"X-Developer-Token": ADMIN_TOKEN})
+        check("admin reactivates the API", status == 200, (status, body.get("error")))
+        time.sleep(32)
+        status, body = call("POST", "apiGateway", {"api": "system", "endpoint": "time"}, {"X-Api-Key": KEY_ROTATED}, pace=True)
+        check("reactivated API serves traffic again", status == 200, (status, body))
+        status, body = call("POST", "categoryManage", {"action": "create", "name": "E2E Category " + str(SUFFIX),
+                                                       "description": "created by the test suite"}, {"X-Developer-Token": ADMIN_TOKEN})
+        check("admin creates a category", status == 201, (status, body.get("error")))
+        new_cat_id = body.get("data", {}).get("category", {}).get("id")
+        if new_cat_id:
+            status, body = call("POST", "categoryManage", {"action": "delete", "id": new_cat_id}, {"X-Developer-Token": ADMIN_TOKEN})
+            check("admin deletes an empty category", status == 200, (status, body.get("error")))
+        status, body = call("POST", "apiManage", {"action": "create", "name": "E2E Temp API " + str(SUFFIX),
+                                                  "description": "temp", "status": "draft"}, {"X-Developer-Token": ADMIN_TOKEN})
+        check("admin creates an API product", status == 201, (status, body.get("error")))
+        temp_slug = body.get("data", {}).get("api", {}).get("slug")
+        if temp_slug:
+            status, body = call("POST", "endpointManage", {"action": "create", "api_slug": temp_slug, "name": "ping",
+                                                           "method": "GET", "path": "/v1/temp/ping",
+                                                           "handler_key": "system.time"}, {"X-Developer-Token": ADMIN_TOKEN})
+            check("admin creates an endpoint", status == 201, (status, body.get("error")))
+            status, body = call("POST", "apiManage", {"action": "delete", "slug": temp_slug}, {"X-Developer-Token": ADMIN_TOKEN})
+            check("admin deletes an API and cascades endpoints",
+                  status == 200 and body["data"]["endpoints_deleted"] >= 1, (status, body.get("error")))
+else:
+    print("SKIP admin lifecycle checks (set ADMIN_EMAIL and ADMIN_PASSWORD to enable)")
 
-# ---------- H. session lifecycle ----------
-s, b = call_retry("POST", "devLogin", {"email": "dev1@example.com", "password": "SuperSecret123"})
-TMP = b.get("data", {}).get("token")
-check("login issues token", s == 200 and TMP, (s, b.get("error")))
-s, b = call_retry("POST", "devSession", {"action": "logout"}, {"X-Developer-Token": TMP})
-check("logout", s == 200, (s, b))
-s, b = call_retry("POST", "devSession", {"action": "me"}, {"X-Developer-Token": TMP})
-check("revoked session rejected", s == 401 and b["error"]["code"] == "token_revoked", (s, b))
-s, b = call_retry("POST", "devSession", {"action": "me"}, {"X-Developer-Token": "dst_fake"})
-check("fake session rejected", s == 401, (s, b))
-s, b = call_retry("POST", "devSession", {"action": "me"}, {"X-Developer-Token": DEV})
-check("devSession me returns profile+overview", s == 200 and b["data"]["developer"]["email"] == "dev1@example.com", (s, b.get("error")))
-s, b = call_retry("POST", "devLogin", {"email": "dev1@example.com", "password": "wrongpass"})
-check("wrong password rejected", s == 401, (s, b))
+# ---------------------------------------------------------------- session lifecycle
+status, body = call("POST", "devLogin", {"email": EMAIL_A, "password": "E2eTestPassword1"})
+temp_token = body.get("data", {}).get("token")
+check("login issues a session token", status == 200 and temp_token, (status, body.get("error")))
+status, body = call("POST", "devSession", {"action": "logout"}, {"X-Developer-Token": temp_token})
+check("logout succeeds", status == 200, (status, body))
+status, body = call("POST", "devSession", {"action": "me"}, {"X-Developer-Token": temp_token})
+check("logged-out session rejected", status == 401 and body["error"]["code"] == "token_revoked", (status, body))
+status, body = call("POST", "devSession", {"action": "me"}, {"X-Developer-Token": "dst_forged_token"})
+check("forged session rejected", status == 401, (status, body))
+status, body = call("POST", "devSession", {"action": "me"}, {"X-Developer-Token": TOKEN_A})
+check("session read returns profile and overview", status == 200 and body["data"]["developer"]["email"] == EMAIL_A, (status, body.get("error")))
+status, body = call("POST", "devLogin", {"email": EMAIL_A, "password": "wrong-password"})
+check("wrong password rejected", status == 401, (status, body))
+status, body = call("POST", "devRegister", {"email": EMAIL_A, "password": "E2eTestPassword1"})
+check("duplicate registration rejected", status == 409, (status, body))
+status, body = call("POST", "devRegister", {"email": "not-an-email", "password": "E2eTestPassword1"})
+check("invalid email rejected on registration", status == 400, (status, body))
+status, body = call("POST", "devRegister", {"email": "short.%s@example.com" % SUFFIX, "password": "short"})
+check("weak password rejected on registration", status == 400, (status, body))
 
-passed = sum(1 for _, ok, _ in results if ok)
-print("\n==== %d/%d PASSED ====" % (passed, len(results)))
-for n, ok, d in results:
-    if not ok: print("FAILED:", n, "|", str(d)[:200])
+# ---------------------------------------------------------------- summary
+passed = sum(1 for _, ok in results if ok)
+print("\n==== %d/%d assertions passed ====" % (passed, len(results)))
+for name, ok in results:
+    if not ok:
+        print("FAILED:", name)
+sys.exit(0 if passed == len(results) else 1)

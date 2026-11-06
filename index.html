@@ -494,7 +494,7 @@ async function loadDashboard() {
   ]);
   if (k.status === 200) state.keys = (k.body.data.keys || []);
   if (s.status === 200) state.overview = s.body.data.overview;
-  if (state.view === "dashboard") render();
+  if (state.view === "dashboard" || state.view === "playground") render();
 }
 
 function newKey() {

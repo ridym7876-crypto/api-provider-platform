@@ -160,7 +160,7 @@ footer .in{max-width:1280px;margin:0 auto;display:flex;justify-content:space-bet
   </div>
 </header>
 <main id="app"></main>
-<footer><div class="in"><span>MR RIDUY AI API · AI APIs for websites, apps and games &middot; build b2</span><span id="footright">Gateway: /functions/apiGateway</span></div></footer>
+<footer><div class="in"><span>MR RIDUY AI API · AI APIs for websites, apps and games &middot; build b3</span><span id="footright">Gateway: /functions/apiGateway</span></div></footer>
 <div id="modals"></div>
 <div id="toast"></div>
 
@@ -205,11 +205,17 @@ async function call(fn, payload = {}, extraHeaders = {}) {
   if (state.token && !headers["X-Developer-Token"]) headers["X-Developer-Token"] = state.token;
   let res, body = {};
   try {
-    res = await fetch(BASE + "/" + fn, { method: "POST", headers, body: JSON.stringify(payload) });
+    const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const tid = ctrl ? setTimeout(() => ctrl.abort(), 25000) : null;
+    try {
+      res = await fetch(BASE + "/" + fn, { method: "POST", headers, body: JSON.stringify(payload), signal: ctrl ? ctrl.signal : undefined });
+    } finally { if (tid) clearTimeout(tid); }
     const text = await res.text();
     try { body = text ? JSON.parse(text) : {}; } catch (_) { body = { raw: text }; }
   } catch (e) {
-    return { status: 0, body: { ok: false, error: { code: "network", message: "Network error: " + e.message } } };
+    const aborted = e && e.name === "AbortError";
+    return { status: 0, body: { ok: false, error: { code: aborted ? "timeout" : "network",
+      message: aborted ? "The server took too long to respond. Please press the button again." : "Network error: " + e.message } } };
   }
   const action = payload && payload.action;
   if (isRead && res.status < 400) MEMO.set(memoKey, { val: { status: res.status, body }, at: Date.now() });

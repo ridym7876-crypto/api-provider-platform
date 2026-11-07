@@ -129,7 +129,7 @@ status, body = call("POST", "apiGateway", {}, {"X-Api-Key": KEY_MAIN},
 check("query-parameter routing", status == 200 and body["data"]["slug"] == "hello-there", (status, body))
 
 status, body = call("POST", "apiGateway", {"api": "crypto", "endpoint": "sha256", "text": "flat"}, {"X-Api-Key": KEY_MAIN}, pace=True)
-check("flattened body parameters", status == 200 and body["data"]["input_length"] == 4, (status, body))
+check("flattened body parameters", status == 200 and body["data"].get("input_bytes", body["data"].get("input_length")) == 4, (status, body))
 
 # ---------------------------------------------------------------- failure modes
 status, body = call("POST", "apiGateway", {"api": "system", "endpoint": "time"})

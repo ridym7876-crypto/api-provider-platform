@@ -251,7 +251,8 @@ async function boot() {
   if (state.token) {
     const { status, body } = await call("devSession", { action: "me" });
     if (status === 200) { state.dev = body.data.developer; state.overview = body.data.overview; }
-    else { state.token = ""; localStorage.removeItem(TOKEN_KEY); state.dev = null; }
+    else if (status === 401) { state.token = ""; localStorage.removeItem(TOKEN_KEY); state.dev = null; }
+    else { toast("Could not reach the server just now. Refresh in a few seconds.", "bad"); }
   }
   renderNav();
   go(state.view);

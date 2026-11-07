@@ -199,7 +199,21 @@ async function call(fn, payload = {}, extraHeaders = {}) {
   } catch (e) {
     return { status: 0, body: { ok: false, error: { code: "network", message: "Network error: " + e.message } } };
   }
+  const action = payload && payload.action;
+  if (res.status < 300 && typeof action === "string" && MUTATIONS.test(action)) scheduleRefresh();
   return { status: res.status, body };
+}
+
+/* A write is not instantly visible everywhere; refresh twice so new rows appear. */
+const MUTATIONS = /^(create|update|delete|set_status|revoke|regenerate)$/;
+let refreshTimers = [];
+function scheduleRefresh() {
+  refreshTimers.forEach(clearTimeout);
+  refreshTimers = [setTimeout(refreshCurrent, 600), setTimeout(refreshCurrent, 2200)];
+}
+function refreshCurrent() {
+  if (state.view === "admin") loadAdmin();
+  else if (state.view === "dashboard") loadDashboard();
 }
 
 /* ---------------- navigation ---------------- */

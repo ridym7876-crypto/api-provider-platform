@@ -681,7 +681,7 @@ function viewUsage() {
     <td>${pct(pick(r, "success_rate_percent", "success_rate", "success"))}</td>
     <td>${num(pick(r, "avg_response_time_ms", "avg"))}ms</td></tr>`).join("");
   const keyRows = byKey.map((r) => `<tr>
-    <td class="mono">${esc(pick(r, "key", "api_key_prefix", "key_prefix") || "")}</td>
+    <td class="mono">${esc(pick(r, "label", "key", "api_key_prefix", "key_prefix", "key_id") || "")}</td>
     <td>${num(pick(r, "requests", "count"))}</td>
     <td>${pct(pick(r, "success_rate_percent", "success_rate", "success"))}</td>
     <td>${num(pick(r, "avg_response_time_ms", "avg"))}ms</td></tr>`).join("");

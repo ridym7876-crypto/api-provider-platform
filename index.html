@@ -678,12 +678,12 @@ function viewUsage() {
   const epRows = byEp.map((r) => `<tr>
     <td class="mono">${esc(pick(r, "endpoint", "path", "endpoint_path") || "")}</td>
     <td>${num(pick(r, "requests", "count"))}</td>
-    <td>${pct(pick(r, "success_rate", "success"))}</td>
+    <td>${pct(pick(r, "success_rate_percent", "success_rate", "success"))}</td>
     <td>${num(pick(r, "avg_response_time_ms", "avg"))}ms</td></tr>`).join("");
   const keyRows = byKey.map((r) => `<tr>
     <td class="mono">${esc(pick(r, "key", "api_key_prefix", "key_prefix") || "")}</td>
     <td>${num(pick(r, "requests", "count"))}</td>
-    <td>${pct(pick(r, "success_rate", "success"))}</td>
+    <td>${pct(pick(r, "success_rate_percent", "success_rate", "success"))}</td>
     <td>${num(pick(r, "avg_response_time_ms", "avg"))}ms</td></tr>`).join("");
   const dayBars = byDay.map((d) => {
     const v = num(pick(d, "requests", "count"));
@@ -700,7 +700,7 @@ function viewUsage() {
       <button class="btn ghost sm" onclick="state.usage=null;render()">Refresh</button></div>
     <div class="stats" style="margin-bottom:24px">
       <div class="stat"><div class="k">Requests</div><div class="v">${num(pick(t, "requests", "total_requests"))}</div></div>
-      <div class="stat"><div class="k">Success rate</div><div class="v">${pct(pick(t, "success_rate"))}</div></div>
+      <div class="stat"><div class="k">Success rate</div><div class="v">${pct(pick(t, "success_rate_percent", "success_rate"))}</div></div>
       <div class="stat"><div class="k">Avg latency</div><div class="v">${num(pick(t, "avg_response_time_ms", "avg"))}ms</div></div>
       <div class="stat"><div class="k">P95 latency</div><div class="v">${num(pick(t, "p95_response_time_ms", "p95"))}ms</div></div>
     </div>

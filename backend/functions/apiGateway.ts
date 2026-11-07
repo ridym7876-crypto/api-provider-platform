@@ -31,6 +31,7 @@ const j = (status, body, extra = {}) => new Response(JSON.stringify(body), {
   status, headers: { 'Content-Type': 'application/json', ...CORS, ...extra },
 });
 const str = (v) => (typeof v === 'string' ? v.trim() : '');
+const qp = (params, k) => (params && typeof params.get === 'function' ? str(params.get(k)) : '');
 const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
 
 const cache = { cat: null, catAt: 0, keys: new Map(), sess: new Map(), rl: new Map() };
@@ -128,7 +129,7 @@ const HANDLERS = {
   },
 
   'text.slugify': async ({ body, params }) => {
-    const text = str(body.text || params.text);
+    const text = str(body.text || qp(params, 'text'));
     if (!text) return { status: 400, body: { error: 'missing_parameter', message: '"text" (non-empty string) is required.' } };
     const slug = text.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
       .replace(/[^a-z0-9\s-]/g, ' ').trim().replace(/\s+/g, '-').replace(/-+/g, '-');
@@ -136,7 +137,7 @@ const HANDLERS = {
   },
 
   'text.stats': async ({ body, params }) => {
-    const text = str(body.text || params.text);
+    const text = str(body.text || qp(params, 'text'));
     if (!text) return { status: 400, body: { error: 'missing_parameter', message: '"text" (non-empty string) is required.' } };
     const words = text.split(/\s+/).filter(Boolean);
     return { status: 200, body: {
@@ -168,12 +169,14 @@ const HANDLERS = {
   },
 
   'data.endpoints.list': async ({ base44, body, params }) => {
-    const slug = str(body.api_slug || params.api_slug);
-    if (!slug) return { status: 400, body: { error: 'missing_parameter', message: '"api_slug" is required.' } };
-    const r = await base44.asServiceRole.entities.ApiEndpoint.filter({ api_slug: slug }, { limit: 200 });
-    return { status: 200, body: { api_slug: slug, endpoints: (r.items || []).map((e) => ({
-      name: e.name, method: e.method, path: e.path, summary: e.summary,
-    })), count: (r.items || []).length } };
+    const slug = str(body.api_slug || qp(params, 'api_slug'));
+    const r = slug
+      ? await base44.asServiceRole.entities.ApiEndpoint.filter({ api_slug: slug }, { limit: 200 })
+      : await base44.asServiceRole.entities.ApiEndpoint.list({ limit: 500 });
+    const rows = r.items || [];
+    return { status: 200, body: { api_slug: slug || null, endpoints: rows.map((e) => ({
+      api_slug: e.api_slug, name: e.name, method: e.method, path: e.path, summary: e.summary,
+    })), count: rows.length } };
   },
 
   'platform.usage': async ({ base44, api_key }) => {
@@ -182,7 +185,9 @@ const HANDLERS = {
     const ok = rows.filter((x) => x.success).length;
     const avg = rows.length ? Math.round(rows.reduce((n, x) => n + Number(x.response_time_ms || 0), 0) / rows.length) : 0;
     return { status: 200, body: {
-      key_prefix: api_key.prefix, sampled_requests: rows.length, success: ok, failed: rows.length - ok,
+      key_prefix: api_key.prefix,
+      total_requests: rows.length, successful_requests: ok, failed_requests: rows.length - ok,
+      sampled_requests: rows.length, success: ok, failed: rows.length - ok,
       avg_response_time_ms: avg, window: 'most recent 500 calls', generated_at: new Date().toISOString(),
     } };
   },
@@ -454,7 +459,10 @@ Deno.serve(async (req) => {
       response_time_ms: Date.now() - started,
       data: result.body,
       meta: {
-        rate_limit: { limit_per_minute: minuteLimit, remaining: rate.minuteRemaining, quota_per_day: dayLimit, day_remaining: rate.dayRemaining },
+        rate_limit: {
+          limit: minuteLimit, limit_per_minute: minuteLimit, remaining: rate.minuteRemaining,
+          quota_per_day: dayLimit, day_remaining: rate.dayRemaining,
+        },
       },
     });
   } catch (e) {

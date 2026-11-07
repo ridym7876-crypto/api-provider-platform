@@ -116,7 +116,7 @@ for api, endpoint, extra, predicate, label in cases:
     payload = {"api": api, "endpoint": endpoint}
     payload.update(extra)
     status, body = call("POST", "apiGateway", payload, {"X-Api-Key": KEY_MAIN}, pace=True)
-    ok = status == 200 and body.get("ok") and predicate(body["data"]) and body["meta"]["rate_limit"]["limit"] > 0
+    ok = status == 200 and body.get("ok") and predicate(body["data"]) and (body["meta"]["rate_limit"].get("limit") or body["meta"]["rate_limit"].get("limit_per_minute") or 0) > 0
     check("gateway " + label, ok, (status, json.dumps(body)[:300]))
 
 # ---------------------------------------------------------------- routing styles

@@ -836,6 +836,12 @@ function newApi() {
   </div><div class="mf"><button class="btn grey" onclick="closeModal()">Cancel</button><button class="btn" onclick="createApi()">Create</button></div>`);
 }
 
+function friendly(body) {
+  const e = (body && body.error) || {};
+  if (e.code === "platform_capacity") return "Platform busy - please try again in a few seconds.";
+  return e.message || "Failed";
+}
+
 async function createApi() {
   const payload = {
     action: "create",
@@ -845,8 +851,12 @@ async function createApi() {
     status: "active", auth_required: true, is_public: true
   };
   const { status, body } = await call("apiManage", payload);
-  if (status === 201) { closeModal(); toast("API created", "ok"); await loadAdmin(); }
-  else toast((body.error && body.error.message) || "Failed", "bad");
+  if (status === 201) {
+    const created = (body.data && body.data.api) || null;
+    if (created) { created.endpoint_count = created.endpoint_count || 0; state.adminApis = (state.adminApis || []).concat([created]); }
+    closeModal(); toast("API created", "ok"); render();
+    await loadAdmin(); refreshSoon();
+  } else toast(friendly(body), "bad");
 }
 
 function newCategory() {
@@ -862,8 +872,12 @@ async function createCategory() {
     action: "create", name: ($("c_name") || {}).value, slug: ($("c_slug") || {}).value,
     description: ($("c_desc") || {}).value, is_active: true
   });
-  if (status === 201) { closeModal(); toast("Category created", "ok"); await loadAdmin(); }
-  else toast((body.error && body.error.message) || "Failed", "bad");
+  if (status === 201) {
+    const created = (body.data && body.data.category) || null;
+    if (created) state.adminCats = (state.adminCats || []).concat([created]);
+    closeModal(); toast("Category created", "ok"); render();
+    await loadAdmin(); refreshSoon();
+  } else toast(friendly(body), "bad");
 }
 
 function newEndpoint() {
@@ -885,7 +899,7 @@ async function createEndpoint() {
     handler_key: ($("e_handler") || {}).value, is_active: true
   });
   if (status === 201) { closeModal(); toast("Endpoint created", "ok"); await loadAdmin(); }
-  else toast((body.error && body.error.message) || "Failed", "bad");
+  else toast(friendly(body), "bad");
 }
 
 /* ---------------- start ---------------- */

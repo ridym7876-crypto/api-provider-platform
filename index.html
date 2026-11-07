@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>MR RIDUY AI API — AI APIs for the web</title>
@@ -157,7 +160,7 @@ footer .in{max-width:1280px;margin:0 auto;display:flex;justify-content:space-bet
   </div>
 </header>
 <main id="app"></main>
-<footer><div class="in"><span>MR RIDUY AI API · AI APIs for websites, apps and games</span><span id="footright">Gateway: /functions/apiGateway</span></div></footer>
+<footer><div class="in"><span>MR RIDUY AI API · AI APIs for websites, apps and games &middot; build b2</span><span id="footright">Gateway: /functions/apiGateway</span></div></footer>
 <div id="modals"></div>
 <div id="toast"></div>
 
@@ -556,15 +559,24 @@ function revealKey(secret, extra) {
 }
 
 async function createKey() {
+  if (!state.token) { closeModal(); toast("Please sign in first, then generate a key.", "bad"); go("auth"); return; }
   const name = ($("k_name") || {}).value || "Default key";
   const btn = $("k_go"); if (btn) { btn.disabled = true; btn.textContent = "Generating…"; }
-  const { status, body } = await call("keyManage", { action: "create", name });
-  if (status === 201) {
-    state.keys = []; closeModal(); revealKey(body.data.api_key, body.data.warning);
+  let r = await call("keyManage", { action: "create", name });
+  const m0 = (r.body && r.body.error && r.body.error.message) || "";
+  if (r.status >= 500 && /capacity|allows \d+ requests|rate limit/i.test(m0)) {
+    await new Promise((z) => setTimeout(z, 1500));
+    r = await call("keyManage", { action: "create", name });
+  }
+  const status = r.status, body = r.body || {};
+  if (status === 201 && body.data && body.data.api_key) {
+    MEMO.clear(); state.keys = []; closeModal(); revealKey(body.data.api_key, body.data.warning);
     await loadDashboard();
   } else {
     if (btn) { btn.disabled = false; btn.textContent = "Generate"; }
-    toast((body.error && body.error.message) || "Could not create key", "bad");
+    const msg = (body.error && body.error.message) || body.message || body.detail || ("Key creation failed (HTTP " + status + ")");
+    toast(msg, "bad");
+    if (status === 401 || status === 403) { state.token = ""; localStorage.removeItem(TOKEN_KEY); state.dev = null; go("auth"); }
   }
 }
 

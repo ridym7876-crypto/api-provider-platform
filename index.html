@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html data-build="b5" lang="en">
 <head>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -148,6 +148,24 @@ footer .in{max-width:1280px;margin:0 auto;display:flex;justify-content:space-bet
 @media(max-width:900px){.grid2{grid-template-columns:1fr}.sidelist{position:static}h1{font-size:32px}.hero{padding:56px 0 40px}}
 </style>
 </head>
+<script>
+/* one-time self-update: if a newer build is published, reload once into it */
+(function () {
+  try {
+    fetch("version.json?t=" + Date.now(), { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        var cur = document.documentElement.getAttribute("data-build") || "";
+        if (j && j.v && cur && j.v !== cur) {
+          var u = new URL(location.href);
+          u.searchParams.set("v", j.v);
+          location.replace(u.toString());
+        }
+      })
+      .catch(function () {});
+  } catch (e) {}
+})();
+</script>
 <body>
 <header>
   <div class="hdr">

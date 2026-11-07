@@ -160,7 +160,7 @@ footer .in{max-width:1280px;margin:0 auto;display:flex;justify-content:space-bet
   </div>
 </header>
 <main id="app"></main>
-<footer><div class="in"><span>MR RIDUY AI API · AI APIs for websites, apps and games &middot; build b3</span><span id="footright">Gateway: /functions/apiGateway</span></div></footer>
+<footer><div class="in"><span>MR RIDUY AI API · AI APIs for websites, apps and games &middot; build b4</span><span id="footright">Gateway: /functions/apiGateway</span></div></footer>
 <div id="modals"></div>
 <div id="toast"></div>
 
@@ -196,7 +196,7 @@ const MEMO_TTL = 45000;
 
 async function call(fn, payload = {}, extraHeaders = {}) {
   const memoKey = fn + "|" + JSON.stringify(payload);
-  const isRead = !payload || !payload.action || payload.action === "list" || payload.action === "get";
+  const isRead = !payload || !payload.action || payload.action === "list" || payload.action === "get" || payload.action === "me";
   if (isRead) {
     const hit = MEMO.get(memoKey);
     if (hit && Date.now() - hit.at < MEMO_TTL) return hit.val;
@@ -212,6 +212,9 @@ async function call(fn, payload = {}, extraHeaders = {}) {
     } finally { if (tid) clearTimeout(tid); }
     const text = await res.text();
     try { body = text ? JSON.parse(text) : {}; } catch (_) { body = { raw: text }; }
+    if (body && body.error && /allows \d+ requests per|rate limit exceeded/i.test(body.error.message || "")) {
+      body.error = { code: "platform_capacity", message: "The server is busy right now. Please wait about 30 seconds, then try again." };
+    }
   } catch (e) {
     const aborted = e && e.name === "AbortError";
     return { status: 0, body: { ok: false, error: { code: aborted ? "timeout" : "network",
